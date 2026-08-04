@@ -30,7 +30,7 @@ enable_nacl=false
 Push-Location $Src
 try {
   gn gen $Out --args=$Args
-  autoninja -C $Out chrome obermon_tests
+  autoninja -C $Out chrome
 } finally { Pop-Location }
 
 New-Item -ItemType Directory -Force -Path $ProductDir | Out-Null
