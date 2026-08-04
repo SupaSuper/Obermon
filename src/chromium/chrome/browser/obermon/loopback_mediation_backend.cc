@@ -3,7 +3,9 @@
 #include "chrome/browser/obermon/mediation_backend.h"
 
 #include <memory>
+#include <utility>
 
+#include "base/notreached.h"
 #include "chrome/browser/obermon/scramjet_engine_service.h"
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
 
@@ -32,6 +34,7 @@ class LoopbackMediationBackend final : public MediationBackend {
       case ScramjetEngineService::State::kStopping:
         return State::kStopping;
     }
+    NOTREACHED();
   }
 
   bool IsReady() const override {
