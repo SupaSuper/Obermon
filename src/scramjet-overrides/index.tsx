@@ -3,8 +3,10 @@
 
 import { defaultConfigDev } from "@mercuryworkshop/scramjet";
 import { Controller } from "@mercuryworkshop/scramjet-controller";
+import type { ProxyTransport } from "@mercuryworkshop/proxy-transports";
 import { HttpCachePlugin } from "@mercuryworkshop/scramjet-utils";
 import { demoSettingsStore } from "./store";
+import { SharedTransportClient } from "./shared-transport-client";
 
 const initialMount = document.getElementById("app");
 if (!initialMount) throw new Error("Missing Scramjet application mount point");
@@ -13,10 +15,10 @@ let mountPoint: HTMLElement = initialMount;
 let controller: InstanceType<typeof Controller>;
 const cachePlugin = new HttpCachePlugin();
 
-type TransportConstructor = new (options: { wisp: string }) => any;
+type TransportConstructor = new (options: { wisp: string }) => ProxyTransport;
 
 const pageUrl = new URL(location.href);
-const mediationPartition = pageUrl.searchParams.get("obermon_token") ?? "";
+const transportPartition = pageUrl.searchParams.get("obermon_partition") ?? "";
 const initialDestination = pageUrl.searchParams.get("goto");
 const requestedParameter = pageUrl.searchParams.get("tool");
 const requestedTool =
@@ -25,6 +27,7 @@ const requestedTool =
 	requestedParameter === "settings"
 		? requestedParameter
 		: "browser";
+const sharedClients = new Set<SharedTransportClient>();
 
 // Begin fetching only the selected surface immediately. Vite emits these as
 // separate chunks, so normal browsing does not parse Monaco, request tooling,
@@ -62,14 +65,14 @@ function setStatus(message: string): void {
 }
 
 function getSessionWispUrl(configured: string): string {
-	if (!mediationPartition) return configured;
+	if (!transportPartition) return configured;
 	try {
 		const url = new URL(configured, location.href);
 		const isLocalEngine =
 			(url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
 			(url.port === "4142" || (!url.port && url.protocol === "ws:"));
 		if (!isLocalEngine) return configured;
-		url.searchParams.set("partition", mediationPartition);
+		url.searchParams.set("partition", transportPartition);
 		return url.href;
 	} catch {
 		return configured;
@@ -87,34 +90,58 @@ async function loadTransportConstructor(
 	return module.default as unknown as TransportConstructor;
 }
 
-const initialTransport = demoSettingsStore.transport;
-const initialTransportConstructor = loadTransportConstructor(initialTransport);
-
-export async function getTransport() {
+async function createTransport(): Promise<ProxyTransport> {
 	const selected = demoSettingsStore.transport;
-	const Transport =
-		selected === initialTransport
-			? await initialTransportConstructor
-			: await loadTransportConstructor(selected);
-	return new Transport({ wisp: getSessionWispUrl(demoSettingsStore.wispUrl) });
+	const wisp = getSessionWispUrl(demoSettingsStore.wispUrl);
+
+	// A SharedWorker is scoped to the browser profile's storage partition. All
+	// normal Obermon tabs in that profile therefore share the same initialized
+	// transport and Wisp connection pool, while incognito remains isolated.
+	if (typeof SharedWorker !== "undefined" && transportPartition) {
+		const shared = new SharedTransportClient({
+			transport: selected,
+			wisp,
+			partition: transportPartition,
+		});
+		sharedClients.add(shared);
+		try {
+			await shared.init();
+			return shared;
+		} catch (error) {
+			sharedClients.delete(shared);
+			shared.dispose();
+			console.warn("Shared transport unavailable; using direct transport", error);
+		}
+	}
+
+	const Transport = await loadTransportConstructor(selected);
+	const direct = new Transport({ wisp });
+	if (!direct.ready) await direct.init();
+	return direct;
+}
+
+const initialTransportPromise = createTransport();
+
+export async function getTransport(): Promise<ProxyTransport> {
+	return createTransport();
 }
 
 async function preconnectDestination(): Promise<void> {
-	if (requestedTool !== "browser" || !initialDestination || !mediationPartition) {
+	if (requestedTool !== "browser" || !initialDestination || !transportPartition) {
 		return;
 	}
 
 	const endpoint = new URL("/preconnect", location.origin);
 	endpoint.searchParams.set("destination", initialDestination);
-	endpoint.searchParams.set("partition", mediationPartition);
-	const controller = new AbortController();
-	const timeout = setTimeout(() => controller.abort(), 350);
+	endpoint.searchParams.set("partition", transportPartition);
+	const abortController = new AbortController();
+	const timeout = setTimeout(() => abortController.abort(), 350);
 	try {
 		const response = await fetch(endpoint, {
 			method: "POST",
 			cache: "no-store",
 			credentials: "omit",
-			signal: controller.signal,
+			signal: abortController.signal,
 		});
 		if (!response.ok) {
 			throw new Error(`Preconnect failed: ${response.status}`);
@@ -155,17 +182,15 @@ async function initializeController(): Promise<void> {
 	// Fire the connection hint beside the real startup work. The request has its
 	// own 350 ms budget and is not part of the controller's critical path.
 	void preconnectDestination();
-	const [registration, Transport] = await Promise.all([
+	const [registration, transport] = await Promise.all([
 		registrationPromise,
-		initialTransportConstructor,
+		initialTransportPromise,
 	]);
 	const serviceworker = await resolveServiceWorker(registration);
 	setStatus("Connecting transport…");
 	controller = new Controller({
 		serviceworker,
-		transport: new Transport({
-			wisp: getSessionWispUrl(demoSettingsStore.wispUrl),
-		}),
+		transport,
 		scramjetConfig: defaultConfigDev,
 	});
 	await controller.wait();
@@ -239,6 +264,15 @@ async function bootstrap(): Promise<void> {
 		);
 	}
 }
+
+addEventListener(
+	"pagehide",
+	() => {
+		for (const shared of sharedClients) shared.dispose();
+		sharedClients.clear();
+	},
+	{ once: true }
+);
 
 void bootstrap();
 export { controller, cachePlugin };
