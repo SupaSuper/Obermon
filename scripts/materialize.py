@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import shutil
 from pathlib import Path
 
@@ -115,6 +116,15 @@ def patch_engine_pool(source: str) -> str:
     return source
 
 
+def generate_virtual_wasm_asset(web_root: Path) -> None:
+    wasm = web_root / "scramjet" / "scramjet.wasm"
+    if not wasm.exists():
+        raise FileNotFoundError(f"Scramjet WASM output missing: {wasm}")
+    encoded = base64.b64encode(wasm.read_bytes()).decode("ascii")
+    output = wasm.with_suffix(wasm.suffix + ".js")
+    output.write_text(f"self.WASM = '{encoded}';\n", encoding="ascii")
+
+
 def materialize_engine(repo: Path, chromium: Path, scramjet: Path) -> None:
     generated = chromium / "chrome/browser/obermon/generated_engine"
     if generated.exists():
@@ -140,7 +150,9 @@ def materialize_engine(repo: Path, chromium: Path, scramjet: Path) -> None:
         raise FileNotFoundError(
             f"Pinned Scramjet demo build output missing: {demo_dist}"
         )
-    copy_tree(demo_dist, generated / "web")
+    web_root = generated / "web"
+    copy_tree(demo_dist, web_root)
+    generate_virtual_wasm_asset(web_root)
 
 
 def main() -> int:
