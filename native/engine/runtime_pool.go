@@ -15,6 +15,7 @@ import (
 
 const (
 	warmConnectionLifetime = 12 * time.Second
+	speculativeDialTimeout  = 350 * time.Millisecond
 	maxWarmPerDestination   = 2
 	maxWarmConnections      = 64
 )
@@ -177,7 +178,9 @@ func handlePreconnect(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return true
 	}
-	if err := warmConnections.preconnect(partition, "tcp", address, 5*time.Second); err != nil {
+	if err := warmConnections.preconnect(
+		partition, "tcp", address, speculativeDialTimeout,
+	); err != nil {
 		http.Error(w, "preconnect failed", http.StatusBadGateway)
 		return true
 	}
