@@ -68,6 +68,12 @@ def main() -> int:
 
     build = root / "chrome/browser/BUILD.gn"
     insert_after(build, '    "chrome_browser_main.cc",\n',
+        '    "obermon/loopback_mediation_backend.cc",\n'
+        '    "obermon/mediation_backend.h",\n'
+        '    "obermon/obermon_backend_service.cc",\n'
+        '    "obermon/obermon_backend_service.h",\n'
+        '    "obermon/obermon_backend_service_factory.cc",\n'
+        '    "obermon/obermon_backend_service_factory.h",\n'
         '    "obermon/obermon_browser_main_extra_parts.cc",\n'
         '    "obermon/obermon_browser_main_extra_parts.h",\n'
         '    "obermon/obermon_state_service.cc",\n'
