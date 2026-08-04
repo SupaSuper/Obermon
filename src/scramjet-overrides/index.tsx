@@ -63,14 +63,15 @@ async function loadTransportModule(transport: string) {
 	return import("@mercuryworkshop/libcurl-transport");
 }
 
-const initialTransportModule = loadTransportModule(demoSettingsStore.transport);
+const initialTransport = demoSettingsStore.transport;
+const initialTransportModule = loadTransportModule(initialTransport);
 
 export async function getTransport() {
 	const selected = demoSettingsStore.transport;
 	const module =
-		selected === demoSettingsStore.transport
-			? await loadTransportModule(selected)
-			: await initialTransportModule;
+		selected === initialTransport
+			? await initialTransportModule
+			: await loadTransportModule(selected);
 	return new module.default({ wisp: demoSettingsStore.wispUrl });
 }
 
