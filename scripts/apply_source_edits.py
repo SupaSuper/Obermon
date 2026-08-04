@@ -25,13 +25,6 @@ def replace_once(path: Path, old: str, new: str) -> None:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
-def append_once(path: Path, marker: str, content: str) -> None:
-    text = path.read_text(encoding="utf-8")
-    if marker in text:
-        return
-    path.write_text(text.rstrip() + "\n\n" + content.rstrip() + "\n", encoding="utf-8")
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--chromium", required=True, type=Path)
@@ -86,12 +79,6 @@ def main() -> int:
         '    "obermon/scramjet_tab_helper.h",\n'
         '    "obermon/scramjet_url_mapper.cc",\n'
         '    "obermon/scramjet_url_mapper.h",\n')
-    append_once(build, '# Obermon test aggregation',
-        '# Obermon test aggregation\n'
-        'group("obermon_tests") {\n'
-        '  testonly = true\n'
-        '  deps = [ "//chrome/browser/obermon:obermon_tests" ]\n'
-        '}')
 
     strings = root / "chrome/app/chromium_strings.grd"
     text = strings.read_text(encoding="utf-8")
