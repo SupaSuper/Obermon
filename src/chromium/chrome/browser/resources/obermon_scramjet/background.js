@@ -4,7 +4,7 @@ const VALID_TOOLS = new Set(["requests", "playground", "settings"]);
 
 let enabledCache;
 let pendingPrefRead = null;
-let pendingPrefWrite = null;
+let prefWriteTail = Promise.resolve();
 
 function eligible(url) {
   return typeof url === "string" &&
@@ -34,36 +34,35 @@ function readPref() {
 }
 
 function writePref(value) {
-  if (enabledCache === value && !pendingPrefWrite) {
-    return Promise.resolve(false);
-  }
-  if (pendingPrefWrite) return pendingPrefWrite;
+  const operation = prefWriteTail
+    .catch(() => undefined)
+    .then(() => {
+      if (enabledCache === value) return false;
 
-  pendingPrefWrite = new Promise((resolve, reject) => {
-    chrome.settingsPrivate.setPref(
-      ENABLED_PREF,
-      value,
-      "obermon-scramjet",
-      success => {
-        const error = chrome.runtime.lastError;
-        if (error) {
-          reject(new Error(error.message));
-          return;
-        }
-        if (!success) {
-          reject(new Error("Obermon rejected the Scramjet mode change."));
-          return;
-        }
-        const changed = enabledCache !== value;
-        enabledCache = value;
-        resolve(changed);
-      },
-    );
-  }).finally(() => {
-    pendingPrefWrite = null;
-  });
+      return new Promise((resolve, reject) => {
+        chrome.settingsPrivate.setPref(
+          ENABLED_PREF,
+          value,
+          "obermon-scramjet",
+          success => {
+            const error = chrome.runtime.lastError;
+            if (error) {
+              reject(new Error(error.message));
+              return;
+            }
+            if (!success) {
+              reject(new Error("Obermon rejected the Scramjet mode change."));
+              return;
+            }
+            enabledCache = value;
+            resolve(true);
+          },
+        );
+      });
+    });
 
-  return pendingPrefWrite;
+  prefWriteTail = operation.then(() => undefined, () => undefined);
+  return operation;
 }
 
 chrome.settingsPrivate.onPrefsChanged.addListener(prefs => {
