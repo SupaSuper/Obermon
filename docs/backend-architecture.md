@@ -46,7 +46,7 @@ profile transport partition
 + partitioned Wisp URL
 ```
 
-HTTP requests and WebSocket streams are multiplexed through per-tab `MessagePort` connections. Abort signals propagate into worker-owned `AbortController` instances. Page shutdown closes its outstanding streams, while other tabs continue using the same underlying transport.
+HTTP requests and WebSocket streams are multiplexed through per-tab `MessagePort` connections. Abort signals propagate into worker-owned `AbortController` instances. A real page unload closes its outstanding streams, while a page entering Chromium's back/forward cache retains its ports so restoration does not rebuild the controller or transport. Other tabs continue using the same underlying transport.
 
 When `SharedWorker` is unavailable or cannot initialize, Obermon falls back to a direct transport for that document.
 
@@ -63,6 +63,26 @@ The warm pool is:
 - expired after twelve seconds;
 - unavailable across different profile transport partitions;
 - optional and non-blocking on failure.
+
+### Build-time virtual WASM payload
+
+The upstream controller generated its virtual WASM bootstrap by downloading the binary and reducing every byte into a JavaScript string inside each controller. Obermon now generates `scramjet.wasm.js` once during source materialization. Controllers request that static asset and memoize the resulting text instead of repeating the byte-to-base64 conversion for every tab.
+
+The original binary is still loaded as an `ArrayBuffer` for the controller's own rewriter initialization. The optimization removes the second conversion and large temporary arrays required only for the virtual client bootstrap.
+
+### Streaming profile cache
+
+Scramjet's Cache Storage cache is already shared by documents in the same profile, but its original write path drained the complete response into an `ArrayBuffer` and awaited `cache.put()` before rewriting could continue.
+
+The experiment patch now:
+
+- tees the upstream `ReadableStream`;
+- sends one branch immediately into the rewrite pipeline;
+- writes the second branch to Cache Storage asynchronously;
+- bypasses proxy caching for responses with a known body larger than 8 MiB;
+- preserves cache lookup, freshness, `Vary`, and request cache-mode behavior.
+
+This keeps ordinary page responses streaming and prevents a cache write from becoming part of the rendering critical path. Unknown-length bodies remain streamed through the tee rather than buffered by Obermon before `cache.put()`.
 
 ### Bounded diagnostics
 
@@ -92,9 +112,11 @@ LoopbackMediationBackend
 Go engine
   bounded warm TCP pool
   Scramjet web runtime
+  prebuilt virtual WASM bootstrap
                  ^
                  | one profile-scoped SharedWorker transport
                  | lightweight MessagePort clients per tab
+                 | streaming profile Cache Storage
 ```
 
 The local HTTP and Wisp boundary is still transitional. The browser-visible destination remains a virtual URL and must use a distinct mediated security indicator.
@@ -126,13 +148,13 @@ Responses are designed to stream through Mojo data pipes. The contract is source
 4. Replace the localhost controller URL with an internal browser-owned URL loader.
 5. Connect page lifecycle changes to `MediationSession.Freeze/Resume/Close` and Chromium Performance Manager.
 6. Replace the normal browsing shell with a minimal renderer agent; keep Requests, Playground, Settings, and Monaco in separately loaded tool surfaces.
-7. Define one coordinated raw-response and rewritten-output cache policy.
+7. Move the remaining cache policy and invalidation rules behind one native coordinator.
 8. Move omnibox ranking and index providers behind a revisioned, cancellation-aware native service.
 
 ## Invariants
 
 - `main` remains unchanged until experiment code is compiled and reviewed.
-- Private profiles do not share the profile state graph, intent history, or shared transport worker.
+- Private profiles do not share the profile state graph, intent history, shared transport worker, or transport partition.
 - A virtual destination is accepted only with a browser-generated navigation token.
 - The stable profile transport partition cannot authorize a virtual destination.
 - Speculative warming never creates a destination document or writes history.
