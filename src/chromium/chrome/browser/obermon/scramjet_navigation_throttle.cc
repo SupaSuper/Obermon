@@ -5,10 +5,9 @@
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/single_thread_task_runner.h"
-#include "chrome/browser/obermon/obermon_state_service.h"
-#include "chrome/browser/obermon/obermon_state_service_factory.h"
+#include "chrome/browser/obermon/obermon_backend_service.h"
+#include "chrome/browser/obermon/obermon_backend_service_factory.h"
 #include "chrome/browser/obermon/pref_names.h"
-#include "chrome/browser/obermon/scramjet_engine_service.h"
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "components/prefs/pref_service.h"
@@ -76,23 +75,19 @@ ScramjetNavigationThrottle::WillStartRequest() {
     return PROCEED;
   }
 
-  const GURL internal = ScramjetURLMapper::ToInternalURL(destination);
+  ObermonBackendService* backend =
+      ObermonBackendServiceFactory::GetForProfile(profile);
+  if (!backend) {
+    return CANCEL;
+  }
+  backend->HintDestination(destination,
+                           ObermonBackendService::IntentStrength::kCommitted);
+  const GURL internal = backend->PrepareNavigation(web_contents, destination);
   if (!internal.is_valid()) {
     return CANCEL;
   }
 
-  if (ObermonStateService* state =
-          ObermonStateServiceFactory::GetForProfile(profile)) {
-    PageMutation mutation;
-    mutation.destination_url = destination;
-    mutation.internal_url = internal;
-    mutation.mediation = PageMediationState::kPreparing;
-    mutation.loading = PageLoadingState::kLoading;
-    state->UpdatePage(web_contents, mutation);
-  }
-
-  ScramjetEngineService* engine = ScramjetEngineService::Get();
-  if (engine->is_ready()) {
+  if (backend->IsReady()) {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
         base::BindOnce(&OpenInternalURL, web_contents->GetWeakPtr(), internal,
@@ -101,7 +96,7 @@ ScramjetNavigationThrottle::WillStartRequest() {
     return CANCEL_AND_IGNORE;
   }
 
-  engine->EnsureReady(base::BindOnce(
+  backend->EnsureReady(base::BindOnce(
       &ScramjetNavigationThrottle::RedirectAfterBackendReady,
       weak_factory_.GetWeakPtr(), internal, handle->GetReferrer(),
       handle->GetPageTransition(), handle->IsRendererInitiated()));
@@ -120,12 +115,9 @@ void ScramjetNavigationThrottle::RedirectAfterBackendReady(
 
   if (!ready) {
     if (profile) {
-      if (ObermonStateService* state =
-              ObermonStateServiceFactory::GetForProfile(profile)) {
-        PageMutation mutation;
-        mutation.mediation = PageMediationState::kFailed;
-        mutation.loading = PageLoadingState::kIdle;
-        state->UpdatePage(web_contents, mutation);
+      if (ObermonBackendService* backend =
+              ObermonBackendServiceFactory::GetForProfile(profile)) {
+        backend->ReportNavigationFailure(web_contents);
       }
     }
     CancelDeferredNavigation(CANCEL);
