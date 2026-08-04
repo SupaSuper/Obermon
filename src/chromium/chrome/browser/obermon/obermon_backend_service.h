@@ -4,6 +4,7 @@
 #define CHROME_BROWSER_OBERMON_OBERMON_BACKEND_SERVICE_H_
 
 #include <memory>
+#include <string>
 
 #include "base/containers/flat_map.h"
 #include "base/functional/callback.h"
@@ -59,6 +60,9 @@ class ObermonBackendService : public KeyedService {
 
   Profile* profile() const { return profile_; }
   ObermonStateService* state_service() const { return state_service_; }
+  const std::string& transport_partition() const {
+    return transport_partition_;
+  }
 
   void Shutdown() override;
 
@@ -71,6 +75,7 @@ class ObermonBackendService : public KeyedService {
   raw_ptr<Profile> profile_;
   raw_ptr<ObermonStateService> state_service_;
   std::unique_ptr<MediationBackend> backend_;
+  const std::string transport_partition_;
   base::flat_map<GURL, IntentRecord> recent_intents_;
 };
 
