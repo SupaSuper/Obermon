@@ -21,6 +21,11 @@ namespace {
 constexpr base::TimeDelta kReadyPollInterval = base::Milliseconds(25);
 constexpr base::TimeDelta kStartupTimeout = base::Seconds(5);
 
+void RunReadyCallback(ScramjetEngineService::ReadyCallback callback,
+                      bool ready) {
+  std::move(callback).Run(ready);
+}
+
 }  // namespace
 
 ScramjetEngineService::ScramjetEngineService() = default;
@@ -131,7 +136,8 @@ void ScramjetEngineService::RunReadyCallbacks(bool ready) {
       continue;
     }
     base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-        FROM_HERE, base::BindOnce(std::move(callback), ready));
+        FROM_HERE,
+        base::BindOnce(&RunReadyCallback, std::move(callback), ready));
   }
 }
 
