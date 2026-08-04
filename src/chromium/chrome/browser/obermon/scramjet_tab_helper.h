@@ -5,10 +5,12 @@
 
 #include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"
+#include "base/process/kill.h"
 #include "base/time/time.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
+#include "url/gurl.h"
 
 namespace content {
 class NavigationHandle;
@@ -31,6 +33,9 @@ class ScramjetTabHelper
   void DidStartLoading() override;
   void DidStopLoading() override;
   void OnVisibilityChanged(content::Visibility visibility) override;
+  void PrimaryMainFrameRenderProcessGone(
+      base::TerminationStatus status) override;
+  void RenderViewReady() override;
   void WebContentsDestroyed() override;
 
  private:
@@ -40,6 +45,7 @@ class ScramjetTabHelper
 
   void RecordNavigationMetadata(content::NavigationHandle* navigation_handle,
                                 const GURL& visible_url);
+  void UpdateVisibilityLifecycle(content::Visibility visibility);
 
   raw_ptr<ObermonStateService> state_service_ = nullptr;
   base::flat_map<raw_ptr<content::NavigationHandle>, base::TimeTicks>
