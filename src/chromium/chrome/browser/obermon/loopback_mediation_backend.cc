@@ -35,6 +35,7 @@ class LoopbackMediationBackend final : public MediationBackend {
         return State::kStopping;
     }
     NOTREACHED();
+    return State::kFailed;
   }
 
   bool IsReady() const override {
