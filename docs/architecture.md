@@ -2,35 +2,37 @@
 
 ## 1. Source layout
 
-The repository owns only Obermon-specific code. `scripts/bootstrap.ps1` materializes the pinned Chromium tree under `.work/chromium/src`, builds Scramjet from its pinned AGPL source, copies the resulting web runtime into Chromium resources, copies `src/chromium/**` into the Chromium tree, and runs `scripts/apply_source_edits.py`.
+The repository owns only Obermon-specific code. `scripts/bootstrap.ps1` materializes the pinned Chromium tree under `.work/chromium/src`, builds Scramjet from its pinned AGPL source, copies the resulting web runtime into the local engine, copies `src/chromium/**` into Chromium, and runs guarded source edits.
 
 ## 2. Browser-native Scramjet
 
 Scramjet remains visually represented as an extension, but it is loaded with Chromium's component-extension mechanism. Component location makes it product code rather than a user-installed CRX. Obermon adds one UI exception so this component is visible in the extensions page while its disable/remove controls remain unavailable.
 
-The extension is the control surface. The browser process owns lifecycle and navigation mediation.
+The component extension is the control surface. The browser process owns the mode preference, engine lifecycle, navigation interception, and visible URL mapping.
 
-## 3. Engine lifecycle
+## 3. Native mode switch
 
-`ScramjetEngineService` launches the bundled local engine with a hidden child process and a dedicated profile-scoped token. The engine binds only to loopback. Startup readiness is confirmed through a health endpoint before navigation is redirected.
+`obermon.scramjet_enabled` is a registered profile preference. The built-in component extension uses Chromium's component-only `settingsPrivate` API to read and change it. `ScramjetNavigationThrottle` reads the same preference synchronously before a top-level request is dispatched. This removes the earlier race where an extension redirected a request only after browser navigation began.
 
-The browser does not globally install an operating-system proxy and does not add a local certificate authority.
+## 4. Engine lifecycle
 
-## 4. URL model
+`ScramjetEngineService` launches the bundled local engine with a hidden child process. The engine binds only to loopback. The browser does not globally install an operating-system proxy and does not add a local certificate authority.
+
+## 5. URL model
 
 Each mediated top-level navigation has two URLs:
 
-- **destination URL**: the user-entered HTTP(S) URL; shown in the omnibox, tabs, hover status, history, bookmarks, and session restore.
+- **destination URL**: the user-entered HTTP(S) URL; used as the browser-visible virtual URL.
 - **internal URL**: the loopback Scramjet controller URL used to load rewritten content.
 
-`ScramjetURLMapper` creates and validates this mapping. `ScramjetTabHelper` records the destination before redirect, restores it as the `NavigationEntry` virtual URL after commit, and rejects mappings not authenticated by an in-memory navigation token.
+`ScramjetNavigationThrottle` cancels eligible initial GET navigation before dispatch and opens the internal controller URL. `ScramjetTabHelper` validates the internal origin and extracts the destination, assigns it to `NavigationEntry::SetVirtualURL`, and invalidates the browser URL state so the omnibox updates.
 
-This is not cosmetic spoofing. Obermon owns both the internal transport and the visible navigation model. The mapping is restricted to the built-in engine origin and cannot be requested by arbitrary web content.
+Subsequent fetches, workers, WebSockets, links, and form submissions inside the mediated page are handled by the pinned Scramjet runtime. Initial browser-level POST navigation is deliberately allowed to proceed directly rather than silently discarding a body.
 
-## 5. Security indicator
+## 6. Security indicator
 
-The destination URL may be displayed as the virtual URL, but Obermon must not reuse Chromium's ordinary secure-connection indicator without qualification. The initial implementation uses a distinct Scramjet security state. The panel and page-info UI explain that content was fetched through Scramjet and identify the destination separately from the local document origin.
+The destination URL may be displayed as the virtual URL, but Obermon must not reuse Chromium's ordinary secure-connection indicator without qualification. A dedicated mediated security state and page-info treatment remain required before release.
 
-## 6. Vivaldi reference
+## 7. Vivaldi reference
 
-Obermon recreates the useful Vivaldi interaction model—compact tab strip, side panel, flexible toolbar placement, and dense settings—as original HTML/CSS/Views code. No Vivaldi proprietary source is copied.
+Obermon recreates the useful Vivaldi interaction model—compact tab strip, side panel, flexible toolbar placement, and dense settings—as original code. No Vivaldi proprietary source is copied.

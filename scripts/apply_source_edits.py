@@ -32,51 +32,53 @@ def main() -> int:
     root = args.chromium
 
     main_cc = root / "chrome/browser/chrome_browser_main.cc"
-    insert_after(
-        main_cc,
-        '#include "chrome/browser/chrome_browser_main_extra_parts.h"\n',
-        f'#include "chrome/browser/obermon/obermon_browser_main_extra_parts.h"  {MARK}\n',
-    )
-    insert_after(
-        main_cc,
-        '  main_parts->AddParts(\n      std::make_unique<ChromeBrowserMainExtraPartsThreadNotifier>(\n          std::move(threads_ready_closure)));\n',
-        f'  main_parts->AddParts(\n      std::make_unique<obermon::ObermonBrowserMainExtraParts>());  {MARK}\n',
-    )
+    insert_after(main_cc, '#include "chrome/browser/chrome_browser_main_extra_parts.h"\n',
+                 f'#include "chrome/browser/obermon/obermon_browser_main_extra_parts.h"  {MARK}\n')
+    insert_after(main_cc,
+                 '  main_parts->AddParts(\n      std::make_unique<ChromeBrowserMainExtraPartsThreadNotifier>(\n          std::move(threads_ready_closure)));\n',
+                 f'  main_parts->AddParts(\n      std::make_unique<obermon::ObermonBrowserMainExtraParts>());  {MARK}\n')
 
     observers = root / "chrome/browser/universal_web_contents_observers.cc"
-    insert_after(
-        observers,
-        '#include "chrome/browser/universal_web_contents_observers.h"\n',
-        f'#include "chrome/browser/obermon/scramjet_tab_helper.h"  {MARK}\n',
-    )
-    insert_after(
-        observers,
-        'void AttachUniversalWebContentsObservers(content::WebContents* web_contents) {\n',
-        f'  obermon::ScramjetTabHelper::CreateForWebContents(web_contents);  {MARK}\n',
-    )
+    insert_after(observers, '#include "chrome/browser/universal_web_contents_observers.h"\n',
+                 f'#include "chrome/browser/obermon/scramjet_tab_helper.h"  {MARK}\n')
+    insert_after(observers,
+                 'void AttachUniversalWebContentsObservers(content::WebContents* web_contents) {\n',
+                 f'  obermon::ScramjetTabHelper::CreateForWebContents(web_contents);  {MARK}\n')
 
-    # Keep extensions/ independent from chrome/ layering: the product-owned ID
-    # is a literal in this narrow UI exception rather than an include dependency.
     ui_util = root / "extensions/browser/ui_util.cc"
-    replace_once(
-        ui_util,
+    replace_once(ui_util,
         'bool ShouldDisplayInExtensionSettings(const Extension& extension) {\n  return ShouldDisplayInExtensionSettings(extension.GetType(),\n                                          extension.location());\n}',
-        'bool ShouldDisplayInExtensionSettings(const Extension& extension) {\n  constexpr char kObermonScramjetExtensionId[] =\n      "nfmkpakigincnlglfeddmombloaeikci";\n  if (extension.id() == kObermonScramjetExtensionId) {\n    return true;\n  }\n  return ShouldDisplayInExtensionSettings(extension.GetType(),\n                                          extension.location());\n}',
-    )
+        'bool ShouldDisplayInExtensionSettings(const Extension& extension) {\n  constexpr char kObermonScramjetExtensionId[] =\n      "nfmkpakigincnlglfeddmombloaeikci";\n  if (extension.id() == kObermonScramjetExtensionId) {\n    return true;\n  }\n  return ShouldDisplayInExtensionSettings(extension.GetType(),\n                                          extension.location());\n}')
+
+    content_client = root / "chrome/browser/chrome_content_browser_client.cc"
+    insert_after(content_client,
+        'void ChromeContentBrowserClient::RegisterProfilePrefs(\n    user_prefs::PrefRegistrySyncable* registry) {\n',
+        f'  registry->RegisterBooleanPref("obermon.scramjet_enabled", true);  {MARK}\n')
+
+    prefs_util = root / "chrome/browser/extensions/api/settings_private/prefs_util.cc"
+    insert_after(prefs_util, '  // Miscellaneous\n',
+        f'  (*s_allowlist)["obermon.scramjet_enabled"] =\n      settings_api::PrefType::kBoolean;  {MARK}\n')
+
+    throttles = root / "chrome/browser/chrome_content_browser_client_navigation_throttles.cc"
+    insert_after(throttles, '#include "chrome/browser/omnibox/geolocation_navigation_throttle.h"\n',
+        f'#include "chrome/browser/obermon/scramjet_navigation_throttle.h"  {MARK}\n')
+    insert_after(throttles,
+        '  Profile* profile =\n      Profile::FromBrowserContext(handle.GetWebContents()->GetBrowserContext());\n',
+        f'  obermon::ScramjetNavigationThrottle::MaybeCreateAndAdd(registry);  {MARK}\n')
 
     build = root / "chrome/browser/BUILD.gn"
-    insert_after(
-        build,
-        '    "chrome_browser_main.cc",\n',
+    insert_after(build, '    "chrome_browser_main.cc",\n',
         '    "obermon/obermon_browser_main_extra_parts.cc",\n'
         '    "obermon/obermon_browser_main_extra_parts.h",\n'
+        '    "obermon/pref_names.h",\n'
         '    "obermon/scramjet_engine_service.cc",\n'
         '    "obermon/scramjet_engine_service.h",\n'
+        '    "obermon/scramjet_navigation_throttle.cc",\n'
+        '    "obermon/scramjet_navigation_throttle.h",\n'
         '    "obermon/scramjet_tab_helper.cc",\n'
         '    "obermon/scramjet_tab_helper.h",\n'
         '    "obermon/scramjet_url_mapper.cc",\n'
-        '    "obermon/scramjet_url_mapper.h",\n',
-    )
+        '    "obermon/scramjet_url_mapper.h",\n')
 
     strings = root / "chrome/app/chromium_strings.grd"
     text = strings.read_text(encoding="utf-8")
