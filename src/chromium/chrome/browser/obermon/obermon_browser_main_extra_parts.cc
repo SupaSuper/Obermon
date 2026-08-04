@@ -4,7 +4,7 @@
 
 #include "base/check.h"
 #include "base/files/file_path.h"
-#include "base/functional/callback_helpers.h"
+#include "base/functional/bind.h"
 #include "base/path_service.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/obermon/constants.h"
@@ -32,7 +32,7 @@ void ObermonBrowserMainExtraParts::PostProfileInit(Profile* profile,
   // Prewarm without blocking profile initialization. Navigations still defer
   // on EnsureReady(), so a failed prewarm cannot race the first mediated load.
   if (is_initial_profile && backend) {
-    backend->EnsureReady(base::DoNothing());
+    backend->EnsureReady(base::BindOnce([](bool) {}));
   }
 
   base::FilePath executable_dir;
