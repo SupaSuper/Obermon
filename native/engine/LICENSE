@@ -1,0 +1,6 @@
+GNU AFFERO GENERAL PUBLIC LICENSE
+Version 3, 19 November 2007
+
+The engine source in this directory is distributed under the GNU Affero General Public License version 3 or, where indicated in source headers, any later version. The complete license text is available from the Free Software Foundation and is included in generated source distributions. Building Obermon also fetches the pinned Mercury Workshop Scramjet source, which is licensed AGPL-3.0-only.
+
+SPDX-License-Identifier: AGPL-3.0-or-later

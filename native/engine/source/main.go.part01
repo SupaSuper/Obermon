@@ -1,0 +1,212 @@
+// Scramjet Local native host and local Wisp server.
+//
+// This file is licensed under the GNU Affero General Public License v3.0-or-later.
+// It serves the bundled Scramjet frontend and implements the Wisp v1 packet server
+// needed by Scramjet's local libcurl transport. A minimal Wisp v2 handshake is also
+// supported for clients that request a WebSocket subprotocol.
+package main
+
+import (
+	"bufio"
+	"bytes"
+	"crypto/sha1"
+	"embed"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"mime"
+	"net"
+	"net/http"
+	"os"
+	"path"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+const (
+	httpAddress = "127.0.0.1:4141"
+	wispAddress = "127.0.0.1:4142"
+
+	packetConnect  = byte(0x01)
+	packetData     = byte(0x02)
+	packetContinue = byte(0x03)
+	packetClose    = byte(0x04)
+	packetInfo     = byte(0x05)
+
+	streamTCP = byte(0x01)
+	streamUDP = byte(0x02)
+
+	closeVoluntary   = byte(0x02)
+	closeNetworkErr  = byte(0x03)
+	closeInvalidInfo = byte(0x41)
+	streamBufferSize = uint32(128)
+)
+
+//go:embed web
+var bundledWeb embed.FS
+
+type engine struct {
+	once    sync.Once
+	started chan struct{}
+	err     error
+}
+
+var localEngine = &engine{started: make(chan struct{})}
+
+func main() {
+	// Native Messaging reserves stdout exclusively for length-prefixed JSON.
+	log.SetOutput(os.Stderr)
+	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
+
+	if len(os.Args) > 1 && os.Args[1] == "--server" {
+		if err := runServersBlocking(); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	if isNativeMessagingInvocation() {
+		runNativeMessagingHost()
+		return
+	}
+
+	fmt.Fprintf(os.Stderr, "Scramjet Local is running at http://%s/\n", httpAddress)
+	if err := runServersBlocking(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func isNativeMessagingInvocation() bool {
+	for _, arg := range os.Args[1:] {
+		if strings.HasPrefix(arg, "chrome-extension://") {
+			return true
+		}
+	}
+	return false
+}
+
+func ensureServers() error {
+	localEngine.once.Do(func() {
+		go func() {
+			localEngine.err = runServersBlocking()
+			close(localEngine.started)
+		}()
+	})
+
+	// A successful health probe means either this process or an already-running
+	// instance owns the fixed local ports.
+	deadline := time.Now().Add(4 * time.Second)
+	for time.Now().Before(deadline) {
+		if engineHealthy() {
+			return nil
+		}
+		select {
+		case <-localEngine.started:
+			if localEngine.err != nil && !engineHealthy() {
+				return localEngine.err
+			}
+		default:
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	return errors.New("local engine did not become ready")
+}
+
+func engineHealthy() bool {
+	client := http.Client{Timeout: 250 * time.Millisecond}
+	resp, err := client.Get("http://" + httpAddress + "/health")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func runNativeMessagingHost() {
+	reader := bufio.NewReader(os.Stdin)
+	writer := bufio.NewWriter(os.Stdout)
+
+	for {
+		payload, err := readNativeMessage(reader)
+		if err != nil {
+			if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) {
+				log.Printf("native message read failed: %v", err)
+			}
+			return
+		}
+
+		var request map[string]any
+		_ = json.Unmarshal(payload, &request)
+		err = ensureServers()
+		response := map[string]any{
+			"ok":        err == nil,
+			"httpUrl":   "http://" + httpAddress + "/",
+			"wispUrl":   "ws://" + wispAddress + "/",
+			"localOnly": true,
+		}
+		if err != nil {
+			response["error"] = err.Error()
+		}
+		if err := writeNativeMessage(writer, response); err != nil {
+			log.Printf("native message write failed: %v", err)
+			return
+		}
+	}
+}
+
+func readNativeMessage(r io.Reader) ([]byte, error) {
+	var size uint32
+	if err := binary.Read(r, binary.LittleEndian, &size); err != nil {
+		return nil, err
+	}
+	if size > 1024*1024 {
+		return nil, fmt.Errorf("native message too large: %d", size)
+	}
+	payload := make([]byte, size)
+	_, err := io.ReadFull(r, payload)
+	return payload, err
+}
+
+func writeNativeMessage(w *bufio.Writer, value any) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(payload))); err != nil {
+		return err
+	}
+	if _, err := w.Write(payload); err != nil {
+		return err
+	}
+	return w.Flush()
+}
+
+func runServersBlocking() error {
+	webRoot, err := fs.Sub(bundledWeb, "web")
+	if err != nil {
+		return err
+	}
+
+	httpListener, err := net.Listen("tcp", httpAddress)
+	if err != nil {
+		if engineHealthy() {
+			// Another installed host already owns the ports. Keep the native host
+			// alive so the extension retains a valid port connection.
+			select {}
+		}
+		return fmt.Errorf("listen %s: %w", httpAddress, err)
+	}
+	wispListener, err := net.Listen("tcp", wispAddress)
+	if err != nil {
+		_ = httpListener.Close()
+		return fmt.Errorf("listen %s: %w", wispAddress, err)
+	}
+
+	webServer := &http.Server{

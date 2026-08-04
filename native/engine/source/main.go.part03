@@ -1,0 +1,212 @@
+	sum := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+	return base64.StdEncoding.EncodeToString(sum[:])
+}
+
+type websocketConn struct {
+	conn   net.Conn
+	reader *bufio.Reader
+	writer *bufio.Writer
+	mu     sync.Mutex
+	closed sync.Once
+}
+
+func (ws *websocketConn) close() {
+	ws.closed.Do(func() {
+		_ = ws.writeFrame(0x8, nil)
+		_ = ws.conn.Close()
+	})
+}
+
+func (ws *websocketConn) writeBinary(payload []byte) error {
+	return ws.writeFrame(0x2, payload)
+}
+
+func (ws *websocketConn) writeFrame(opcode byte, payload []byte) error {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+
+	if len(payload) > int(^uint32(0)) {
+		return errors.New("WebSocket payload too large")
+	}
+	var header [10]byte
+	header[0] = 0x80 | opcode
+	n := 2
+	switch {
+	case len(payload) <= 125:
+		header[1] = byte(len(payload))
+	case len(payload) <= 65535:
+		header[1] = 126
+		binary.BigEndian.PutUint16(header[2:4], uint16(len(payload)))
+		n = 4
+	default:
+		header[1] = 127
+		binary.BigEndian.PutUint64(header[2:10], uint64(len(payload)))
+		n = 10
+	}
+	if _, err := ws.writer.Write(header[:n]); err != nil {
+		return err
+	}
+	if _, err := ws.writer.Write(payload); err != nil {
+		return err
+	}
+	return ws.writer.Flush()
+}
+
+func (ws *websocketConn) readMessage() ([]byte, error) {
+	var assembled []byte
+	fragmentOpcode := byte(0)
+
+	for {
+		first, err := ws.reader.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		second, err := ws.reader.ReadByte()
+		if err != nil {
+			return nil, err
+		}
+		fin := first&0x80 != 0
+		opcode := first & 0x0f
+		masked := second&0x80 != 0
+		length := uint64(second & 0x7f)
+		switch length {
+		case 126:
+			var buf [2]byte
+			if _, err := io.ReadFull(ws.reader, buf[:]); err != nil {
+				return nil, err
+			}
+			length = uint64(binary.BigEndian.Uint16(buf[:]))
+		case 127:
+			var buf [8]byte
+			if _, err := io.ReadFull(ws.reader, buf[:]); err != nil {
+				return nil, err
+			}
+			length = binary.BigEndian.Uint64(buf[:])
+		}
+		if length > 64*1024*1024 {
+			return nil, errors.New("WebSocket frame exceeds 64 MiB")
+		}
+
+		var mask [4]byte
+		if masked {
+			if _, err := io.ReadFull(ws.reader, mask[:]); err != nil {
+				return nil, err
+			}
+		}
+		payload := make([]byte, int(length))
+		if _, err := io.ReadFull(ws.reader, payload); err != nil {
+			return nil, err
+		}
+		if masked {
+			for i := range payload {
+				payload[i] ^= mask[i&3]
+			}
+		}
+
+		switch opcode {
+		case 0x8:
+			_ = ws.writeFrame(0x8, payload)
+			return nil, io.EOF
+		case 0x9:
+			if err := ws.writeFrame(0xA, payload); err != nil {
+				return nil, err
+			}
+			continue
+		case 0xA:
+			continue
+		case 0x1, 0x2:
+			if fragmentOpcode != 0 {
+				return nil, errors.New("new data frame during fragmented message")
+			}
+			if fin {
+				if opcode != 0x2 {
+					continue // Wisp is binary-only.
+				}
+				return payload, nil
+			}
+			fragmentOpcode = opcode
+			assembled = append(assembled, payload...)
+		case 0x0:
+			if fragmentOpcode == 0 {
+				return nil, errors.New("unexpected continuation frame")
+			}
+			assembled = append(assembled, payload...)
+			if fin {
+				if fragmentOpcode != 0x2 {
+					assembled = nil
+					fragmentOpcode = 0
+					continue
+				}
+				return assembled, nil
+			}
+		default:
+			return nil, fmt.Errorf("unsupported WebSocket opcode %d", opcode)
+		}
+	}
+}
+
+type wispSession struct {
+	ws      *websocketConn
+	version int
+	mu      sync.RWMutex
+	streams map[uint32]*wispStream
+	closed  chan struct{}
+	once    sync.Once
+}
+
+func newWispSession(ws *websocketConn, v2 bool) *wispSession {
+	version := 1
+	if v2 {
+		version = 2
+	}
+	return &wispSession{
+		ws:      ws,
+		version: version,
+		streams: make(map[uint32]*wispStream),
+		closed:  make(chan struct{}),
+	}
+}
+
+func (s *wispSession) run() {
+	defer s.shutdown()
+
+	if s.version == 2 {
+		// INFO(stream 0): major=2, minor=0, no extensions.
+		if err := s.sendPacket(packetInfo, 0, []byte{2, 0}); err != nil {
+			return
+		}
+		message, err := s.ws.readMessage()
+		if err != nil || len(message) < 7 || message[0] != packetInfo || binary.LittleEndian.Uint32(message[1:5]) != 0 {
+			_ = s.sendPacket(packetClose, 0, []byte{closeInvalidInfo})
+			return
+		}
+	}
+
+	continuePayload := make([]byte, 4)
+	binary.LittleEndian.PutUint32(continuePayload, streamBufferSize)
+	if err := s.sendPacket(packetContinue, 0, continuePayload); err != nil {
+		return
+	}
+
+	for {
+		message, err := s.ws.readMessage()
+		if err != nil {
+			return
+		}
+		if err := s.route(message); err != nil {
+			log.Printf("Wisp packet rejected: %v", err)
+		}
+	}
+}
+
+func (s *wispSession) route(message []byte) error {
+	if len(message) < 5 {
+		return errors.New("packet shorter than 5-byte Wisp header")
+	}
+	packetType := message[0]
+	streamID := binary.LittleEndian.Uint32(message[1:5])
+	payload := message[5:]
+
+	switch packetType {
+	case packetConnect:
+		if len(payload) < 3 {
