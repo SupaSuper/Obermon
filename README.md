@@ -13,13 +13,22 @@ Vivaldi's proprietary UI source is not included. The supplied Vivaldi installer 
 - Scramjet is a visible built-in component extension.
 - It cannot be removed like an ordinary extension.
 - Its panel contains only Requests, Playground, Settings, and a bottom on/off switch.
-- When enabled, top-level navigation is mediated by Scramjet while Obermon keeps the destination URL as the browser-visible URL.
-- Internal proxy URLs are not written to history, bookmarks, hover status, or the omnibox.
+- When enabled, top-level navigation is mediated by the full pinned Scramjet runtime while Obermon keeps the destination URL as the browser-visible virtual URL.
+- Internal proxy URLs are not intended to be exposed through the omnibox or normal navigation UI.
 - Security UI must never claim that the destination's TLS identity was verified when only the local Scramjet origin was verified.
+
+## What is implemented in source
+
+- Pinned Chromium and Scramjet bootstrap.
+- Full Scramjet demo/runtime build and local Wisp engine embedding.
+- Browser-owned engine lifecycle.
+- A visible component extension with the finalized Requests / Playground / Settings panel and mode switch.
+- Top-level mediation and `NavigationEntry::SetVirtualURL` destination mapping.
+- Guarded Chromium source materialization, Windows build/test/package scripts, and source validation CI.
 
 ## Build status
 
-This repository now contains the build pipeline and the first native integration implementation. A commit is not called a release until the pinned Windows build compiles and the browser tests pass on a self-hosted Windows runner.
+The source implementation is present, but no binary is described as a release until the pinned Windows Chromium build compiles and the end-to-end browser tests pass on a self-hosted Windows runner. This distinction is intentional.
 
 ## Start
 

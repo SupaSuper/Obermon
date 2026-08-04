@@ -1,0 +1,32 @@
+name: Validate Obermon Source
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23.x'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate repository and native engine
+        run: python3 scripts/validate_source.py
+      - name: Validate pinned Scramjet source patch
+        shell: bash
+        run: |
+          set -euxo pipefail
+          REF=$(python3 -c 'import json; print(json.load(open("config/upstream.json"))["scramjet"]["ref"])')
+          git clone --filter=blob:none https://github.com/MercuryWorkshop/scramjet.git /tmp/scramjet
+          git -C /tmp/scramjet checkout "$REF"
+          python3 scripts/patch_scramjet_demo.py --scramjet /tmp/scramjet
+          git -C /tmp/scramjet diff --check
