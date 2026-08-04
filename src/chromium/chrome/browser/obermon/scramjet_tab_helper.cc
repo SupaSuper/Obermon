@@ -11,6 +11,7 @@
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
+#include "net/http/http_response_headers.h"
 
 namespace obermon {
 
@@ -31,7 +32,11 @@ ScramjetTabHelper::~ScramjetTabHelper() = default;
 
 void ScramjetTabHelper::DidStartNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!state_service_ || !navigation_handle->IsInPrimaryMainFrame()) {
+  if (!navigation_handle->IsInPrimaryMainFrame()) {
+    return;
+  }
+  navigation_starts_[navigation_handle] = base::TimeTicks::Now();
+  if (!state_service_) {
     return;
   }
 
@@ -49,14 +54,20 @@ void ScramjetTabHelper::DidStartNavigation(
 
 void ScramjetTabHelper::DidFinishNavigation(
     content::NavigationHandle* navigation_handle) {
-  if (!navigation_handle->HasCommitted() ||
-      !navigation_handle->IsInPrimaryMainFrame()) {
+  if (!navigation_handle->IsInPrimaryMainFrame()) {
     return;
   }
 
   const GURL& committed_url = navigation_handle->GetURL();
   const auto destination =
       ScramjetURLMapper::DestinationFromInternalURL(committed_url);
+  const GURL visible_url = destination.value_or(committed_url);
+  RecordNavigationMetadata(navigation_handle, visible_url);
+
+  if (!navigation_handle->HasCommitted()) {
+    return;
+  }
+
   if (destination) {
     content::NavigationEntry* entry =
         web_contents()->GetController().GetLastCommittedEntry();
@@ -114,10 +125,38 @@ void ScramjetTabHelper::OnVisibilityChanged(content::Visibility visibility) {
 }
 
 void ScramjetTabHelper::WebContentsDestroyed() {
+  navigation_starts_.clear();
   if (state_service_) {
     state_service_->RemovePage(web_contents());
     state_service_ = nullptr;
   }
+}
+
+void ScramjetTabHelper::RecordNavigationMetadata(
+    content::NavigationHandle* navigation_handle,
+    const GURL& visible_url) {
+  const auto started = navigation_starts_.find(navigation_handle);
+  if (started == navigation_starts_.end()) {
+    return;
+  }
+  const base::TimeDelta duration = base::TimeTicks::Now() - started->second;
+  navigation_starts_.erase(started);
+
+  if (!state_service_ || !state_service_->request_capture_enabled()) {
+    return;
+  }
+
+  RequestMetadata metadata;
+  if (const PageState* state = state_service_->GetPageState(web_contents())) {
+    metadata.page_id = state->id;
+  }
+  metadata.url = visible_url;
+  metadata.duration = duration;
+  if (const net::HttpResponseHeaders* headers =
+          navigation_handle->GetResponseHeaders()) {
+    metadata.status = headers->response_code();
+  }
+  state_service_->AppendRequestMetadata(std::move(metadata));
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(ScramjetTabHelper);
