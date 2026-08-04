@@ -11,7 +11,6 @@
 #include "base/location.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
-#include "base/task/sequenced_task_runner.h"
 #include "base/uuid.h"
 #include "build/build_config.h"
 
@@ -78,10 +77,11 @@ bool ScramjetEngineService::LaunchProcess() {
     return false;
   }
 
+  ResetReadyMarker();
   ready_file_ = temp_dir.AppendASCII(
       "obermon-scramjet-" +
       base::Uuid::GenerateRandomV4().AsLowercaseString() + ".ready");
-  ResetReadyMarker();
+  base::DeleteFile(ready_file_);
 
   base::CommandLine command(engine);
   command.AppendSwitch("server");
