@@ -11,6 +11,7 @@
 #include "base/location.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/uuid.h"
 #include "build/build_config.h"
 
@@ -31,16 +32,15 @@ ScramjetEngineService* ScramjetEngineService::Get() {
 }
 
 void ScramjetEngineService::EnsureReady(ReadyCallback callback) {
+  ready_callbacks_.push_back(std::move(callback));
   if (is_ready()) {
-    std::move(callback).Run(true);
+    RunReadyCallbacks(true);
     return;
   }
 
   if (state_ == State::kReady && !is_running()) {
     state_ = State::kStopped;
   }
-
-  ready_callbacks_.push_back(std::move(callback));
   if (state_ == State::kStarting) {
     return;
   }
@@ -127,9 +127,11 @@ void ScramjetEngineService::RunReadyCallbacks(bool ready) {
   std::vector<ReadyCallback> callbacks = std::move(ready_callbacks_);
   ready_callbacks_.clear();
   for (ReadyCallback& callback : callbacks) {
-    if (callback) {
-      std::move(callback).Run(ready);
+    if (!callback) {
+      continue;
     }
+    base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE, base::BindOnce(std::move(callback), ready));
   }
 }
 
