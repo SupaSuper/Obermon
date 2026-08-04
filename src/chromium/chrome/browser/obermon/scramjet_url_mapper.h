@@ -4,6 +4,8 @@
 #define CHROME_BROWSER_OBERMON_SCRAMJET_URL_MAPPER_H_
 
 #include <optional>
+#include <string_view>
+
 #include "url/gurl.h"
 
 namespace obermon {
@@ -12,7 +14,8 @@ class ScramjetURLMapper {
  public:
   static bool IsEligibleDestination(const GURL& url);
   static bool IsInternalURL(const GURL& url);
-  static GURL ToInternalURL(const GURL& destination);
+  static GURL ToInternalURL(const GURL& destination,
+                            std::string_view transport_partition);
   static std::optional<GURL> DestinationFromInternalURL(const GURL& internal);
 };
 
