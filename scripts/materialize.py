@@ -21,6 +21,34 @@ def copy_tree(source: Path, destination: Path) -> None:
 
 def patch_engine_readiness(main_go: Path) -> None:
     source = main_go.read_text(encoding="utf-8")
+
+    existing_engine_anchor = (
+        '\t\tif engineHealthy() {\n'
+        '\t\t\t// Another installed host already owns the ports. Keep the native host\n'
+        '\t\t\t// alive so the extension retains a valid port connection.\n'
+        '\t\t\tselect {}\n'
+        '\t\t}\n'
+    )
+    existing_engine_replacement = (
+        '\t\tif engineHealthy() {\n'
+        '\t\t\t// Another installed host already owns the ports. Publish readiness\n'
+        '\t\t\t// for the browser that launched this compatibility process, then\n'
+        '\t\t\t// remain alive so its process handle stays valid.\n'
+        '\t\t\tif readyErr := writeReadyFile(httpAddress, wispAddress); readyErr != nil {\n'
+        '\t\t\t\treturn readyErr\n'
+        '\t\t\t}\n'
+        '\t\t\tselect {}\n'
+        '\t\t}\n'
+    )
+    if existing_engine_replacement not in source:
+        if existing_engine_anchor not in source:
+            raise RuntimeError(
+                "Pinned native engine source changed; existing-engine anchor is missing"
+            )
+        source = source.replace(
+            existing_engine_anchor, existing_engine_replacement, 1
+        )
+
     ready_call = (
         '\tif err := writeReadyFile(httpListener.Addr().String(), '
         'wispListener.Addr().String()); err != nil {\n'
@@ -29,18 +57,18 @@ def patch_engine_readiness(main_go: Path) -> None:
         '\t\treturn err\n'
         '\t}\n\n'
     )
-    if ready_call in source:
-        return
-
-    anchor = (
-        '\tlog.Printf("Scramjet frontend listening on http://%s/", '
-        'httpAddress)\n'
-    )
-    if anchor not in source:
-        raise RuntimeError(
-            "Pinned native engine source changed; readiness anchor is missing"
+    if ready_call not in source:
+        anchor = (
+            '\tlog.Printf("Scramjet frontend listening on http://%s/", '
+            'httpAddress)\n'
         )
-    main_go.write_text(source.replace(anchor, ready_call + anchor, 1), encoding="utf-8")
+        if anchor not in source:
+            raise RuntimeError(
+                "Pinned native engine source changed; readiness anchor is missing"
+            )
+        source = source.replace(anchor, ready_call + anchor, 1)
+
+    main_go.write_text(source, encoding="utf-8")
 
 
 def materialize_engine(repo: Path, chromium: Path, scramjet: Path) -> None:
