@@ -70,11 +70,16 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     overrides = repo_root / "src" / "scramjet-overrides"
     demo_source = args.scramjet / "packages" / "demo" / "src"
+    utils_source = args.scramjet / "packages" / "utils" / "src"
 
     copy_override(overrides / "index.tsx", demo_source / "index.tsx")
     copy_override(
         overrides / "BrowserView.tsx",
         demo_source / "pages" / "BrowserView.tsx",
+    )
+    copy_override(
+        overrides / "link-handler-plugin.ts",
+        utils_source / "link-handler-plugin.ts",
     )
 
     patch_request_viewer(demo_source / "pages" / "RequestViewer.tsx")
