@@ -19,9 +19,17 @@ def copy_tree(source: Path, destination: Path) -> None:
             shutil.copy2(item, target)
 
 
-def patch_engine_readiness(main_go: Path) -> None:
-    source = main_go.read_text(encoding="utf-8")
+def replace_once(source: str, old: str, new: str, description: str) -> str:
+    if new in source:
+        return source
+    if old not in source:
+        raise RuntimeError(
+            f"Pinned native engine source changed; {description} anchor is missing"
+        )
+    return source.replace(old, new, 1)
 
+
+def patch_engine_readiness(source: str) -> str:
     existing_engine_anchor = (
         '\t\tif engineHealthy() {\n'
         '\t\t\t// Another installed host already owns the ports. Keep the native host\n'
@@ -40,14 +48,12 @@ def patch_engine_readiness(main_go: Path) -> None:
         '\t\t\tselect {}\n'
         '\t\t}\n'
     )
-    if existing_engine_replacement not in source:
-        if existing_engine_anchor not in source:
-            raise RuntimeError(
-                "Pinned native engine source changed; existing-engine anchor is missing"
-            )
-        source = source.replace(
-            existing_engine_anchor, existing_engine_replacement, 1
-        )
+    source = replace_once(
+        source,
+        existing_engine_anchor,
+        existing_engine_replacement,
+        "existing-engine readiness",
+    )
 
     ready_call = (
         '\tif err := writeReadyFile(httpListener.Addr().String(), '
@@ -57,18 +63,56 @@ def patch_engine_readiness(main_go: Path) -> None:
         '\t\treturn err\n'
         '\t}\n\n'
     )
-    if ready_call not in source:
-        anchor = (
-            '\tlog.Printf("Scramjet frontend listening on http://%s/", '
-            'httpAddress)\n'
-        )
-        if anchor not in source:
-            raise RuntimeError(
-                "Pinned native engine source changed; readiness anchor is missing"
-            )
-        source = source.replace(anchor, ready_call + anchor, 1)
+    anchor = (
+        '\tlog.Printf("Scramjet frontend listening on http://%s/", '
+        'httpAddress)\n'
+    )
+    return replace_once(source, anchor, ready_call + anchor, "listener readiness")
 
-    main_go.write_text(source, encoding="utf-8")
+
+def patch_engine_pool(source: str) -> str:
+    source = replace_once(
+        source,
+        '\t\tif r.URL.Path == "/health" {\n',
+        '\t\tif handlePreconnect(w, r) {\n'
+        '\t\t\treturn\n'
+        '\t\t}\n\n'
+        '\t\tif r.URL.Path == "/health" {\n',
+        "preconnect handler",
+    )
+    source = replace_once(
+        source,
+        '\tsession := newWispSession(ws, protocol != "")\n',
+        '\tpartition := normalizedPartition(r.URL.Query().Get("partition"))\n'
+        '\tsession := newWispSession(ws, protocol != "", partition)\n',
+        "Wisp partition selection",
+    )
+    source = replace_once(
+        source,
+        'type wispSession struct {\n\tws      *websocketConn\n\tversion int\n',
+        'type wispSession struct {\n\tws        *websocketConn\n\tversion   int\n\tpartition string\n',
+        "Wisp session partition field",
+    )
+    source = replace_once(
+        source,
+        'func newWispSession(ws *websocketConn, v2 bool) *wispSession {\n',
+        'func newWispSession(ws *websocketConn, v2 bool, partition string) *wispSession {\n',
+        "Wisp session constructor",
+    )
+    source = replace_once(
+        source,
+        '\treturn &wispSession{\n\t\tws:      ws,\n\t\tversion: version,\n',
+        '\treturn &wispSession{\n\t\tws:        ws,\n\t\tversion:   version,\n\t\tpartition: partition,\n',
+        "Wisp session partition initialization",
+    )
+    source = replace_once(
+        source,
+        '\tconn, err := net.DialTimeout(network, address, 20*time.Second)\n',
+        '\tconn, err := warmConnections.takeOrDial(\n'
+        '\t\tst.session.partition, network, address, 20*time.Second)\n',
+        "warm connection consumption",
+    )
+    return source
 
 
 def materialize_engine(repo: Path, chromium: Path, scramjet: Path) -> None:
@@ -81,12 +125,13 @@ def materialize_engine(repo: Path, chromium: Path, scramjet: Path) -> None:
     if not parts:
         raise FileNotFoundError("No native engine source parts were found")
     main_go = generated / "main.go"
-    with main_go.open("wb") as output:
-        for part in parts:
-            output.write(part.read_bytes())
+    source = b"".join(part.read_bytes() for part in parts).decode("utf-8")
+    source = patch_engine_readiness(source)
+    source = patch_engine_pool(source)
+    main_go.write_text(source, encoding="utf-8")
 
-    patch_engine_readiness(main_go)
-    shutil.copy2(repo / "native/engine/runtime_ready.go", generated / "runtime_ready.go")
+    for runtime_file in ("runtime_ready.go", "runtime_pool.go"):
+        shutil.copy2(repo / "native/engine" / runtime_file, generated / runtime_file)
     shutil.copy2(repo / "native/engine/go.mod", generated / "go.mod")
     shutil.copy2(repo / "native/engine/LICENSE", generated / "LICENSE")
 
