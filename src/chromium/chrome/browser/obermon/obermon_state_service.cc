@@ -3,12 +3,15 @@
 #include "chrome/browser/obermon/obermon_state_service.h"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
+#include "base/check.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/task/sequenced_task_runner.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents.h"
 
 namespace obermon {
@@ -122,8 +125,8 @@ const PageState* ObermonStateService::GetPageState(
 std::vector<PageState> ObermonStateService::GetPageSnapshot() const {
   std::vector<PageState> snapshot;
   snapshot.reserve(pages_.size());
-  for (const auto& [web_contents, page] : pages_) {
-    snapshot.push_back(page);
+  for (const auto& entry : pages_) {
+    snapshot.push_back(entry.second);
   }
   return snapshot;
 }
@@ -172,7 +175,8 @@ std::vector<RequestMetadata> ObermonStateService::GetRecentRequests(
   const size_t count = std::min(limit, request_metadata_.size());
   std::vector<RequestMetadata> snapshot;
   snapshot.reserve(count);
-  const auto first = request_metadata_.end() - count;
+  const auto first =
+      std::next(request_metadata_.begin(), request_metadata_.size() - count);
   snapshot.insert(snapshot.end(), first, request_metadata_.end());
   return snapshot;
 }
