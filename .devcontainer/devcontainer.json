@@ -1,0 +1,31 @@
+{
+  "name": "Obermon Source Development",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "hostRequirements": {
+    "cpus": 8,
+    "memory": "16gb",
+    "storage": "64gb"
+  },
+  "remoteUser": "vscode",
+  "updateRemoteUserUID": true,
+  "postCreateCommand": "bash scripts/codespace-check.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "golang.go",
+        "ms-python.python",
+        "dbaeumer.vscode-eslint",
+        "timonwong.shellcheck"
+      ],
+      "settings": {
+        "files.eol": "\n",
+        "editor.formatOnSave": true,
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}
