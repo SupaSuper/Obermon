@@ -39,8 +39,14 @@ try {
   go build -trimpath -ldflags "-s -w" -o (Join-Path $ProductDir "scramjet-engine.exe") .
 } finally { Pop-Location }
 
-$ExtensionSource = Join-Path $Src "chrome\browser\resources\obermon_scramjet"
-$ExtensionOut = Join-Path $ProductDir "scramjet_extension"
-Remove-Item $ExtensionOut -Recurse -Force -ErrorAction SilentlyContinue
-Copy-Item $ExtensionSource $ExtensionOut -Recurse
+$Resources = @(
+  @{ Source = "chrome\browser\resources\obermon_scramjet"; Destination = "scramjet_extension" },
+  @{ Source = "chrome\browser\resources\obermon_theme"; Destination = "theme_extension" }
+)
+foreach ($Resource in $Resources) {
+  $Source = Join-Path $Src $Resource.Source
+  $Destination = Join-Path $ProductDir $Resource.Destination
+  Remove-Item $Destination -Recurse -Force -ErrorAction SilentlyContinue
+  Copy-Item $Source $Destination -Recurse
+}
 Write-Host "Build completed: $Out" -ForegroundColor Green

@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Obermon Cyberpunk",
+  "version": "1.0.0",
+  "description": "The fixed built-in Obermon browser palette.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAojIbPk+YpuGTdcdvgOQhgoXvfnPKZcUaLARLnJVIj8SVefMS1p4Hsg2vX+lQFOmr4mmHWpkIAEdbDgg+UhtxAJqIdIxL1m31ES15VpYt3lX9c6TNBs53f8SzAx9iq+xpWHlszHDCauupCqcseENMfnvcZwe7Kn9IKEwDtf2Vps/xepADFUrB1raPPKpoqXXU5kYkAnRR3wUip3FAKtrUMxve88O5RrHsflJxWy6m6c+018Etm46i1HBvNK1WeiaXwhFVYn+EA1yFZM7KD0xmMs39LFWT4DFPWD51F/sTrJm9iQWshpgTKZJ069aMzNOkSYKAs38+iIhH5XvYJTwYCQIDAQAB",
+  "theme": {
+    "colors": {
+      "frame": [7, 11, 18],
+      "frame_inactive": [10, 14, 22],
+      "toolbar": [11, 16, 26],
+      "toolbar_text": [234, 239, 247],
+      "toolbar_button_icon": [255, 137, 48],
+      "bookmark_text": [223, 229, 238],
+      "tab_text": [250, 252, 255],
+      "tab_background_text": [153, 164, 181],
+      "ntp_background": [7, 11, 18],
+      "ntp_text": [232, 237, 245],
+      "ntp_link": [255, 145, 65],
+      "button_background": [255, 132, 39]
+    },
+    "tints": {
+      "buttons": [0.06, 0.72, 0.58],
+      "frame": [-1, -1, 0.08],
+      "frame_inactive": [-1, -1, 0.04]
+    },
+    "properties": {
+      "ntp_background_alignment": "bottom",
+      "ntp_background_repeat": "no-repeat"
+    }
+  }
+}

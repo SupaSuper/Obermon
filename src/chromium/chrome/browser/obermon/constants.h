@@ -6,6 +6,8 @@
 namespace obermon {
 inline constexpr char kScramjetExtensionId[] =
     "nfmkpakigincnlglfeddmombloaeikci";
+inline constexpr char kThemeExtensionId[] =
+    "ahjokemkpdafopjjnhjodhdclmgjlfek";
 inline constexpr char kScramjetEngineHost[] = "127.0.0.1";
 inline constexpr int kScramjetEnginePort = 4141;
 inline constexpr int kScramjetWispPort = 4142;

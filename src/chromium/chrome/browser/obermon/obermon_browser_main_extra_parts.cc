@@ -9,6 +9,8 @@
 #include "chrome/browser/obermon/constants.h"
 #include "chrome/browser/obermon/scramjet_engine_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_service_factory.h"
 
 namespace obermon {
 
@@ -23,12 +25,21 @@ void ObermonBrowserMainExtraParts::PostProfileInit(Profile* profile,
 
   base::FilePath executable_dir;
   CHECK(base::PathService::Get(base::DIR_EXE, &executable_dir));
-  const base::FilePath extension_dir =
-      executable_dir.Append(FILE_PATH_LITERAL("obermon"))
-          .Append(FILE_PATH_LITERAL("scramjet_extension"));
-  const extensions::ExtensionId id =
-      extensions::ComponentLoader::Get(profile)->AddOrReplace(extension_dir);
-  CHECK_EQ(id, kScramjetExtensionId);
+  const base::FilePath product_dir =
+      executable_dir.Append(FILE_PATH_LITERAL("obermon"));
+
+  const base::FilePath scramjet_dir =
+      product_dir.Append(FILE_PATH_LITERAL("scramjet_extension"));
+  const extensions::ExtensionId scramjet_id =
+      extensions::ComponentLoader::Get(profile)->AddOrReplace(scramjet_dir);
+  CHECK_EQ(scramjet_id, kScramjetExtensionId);
+
+  const base::FilePath theme_dir =
+      product_dir.Append(FILE_PATH_LITERAL("theme_extension"));
+  const extensions::ExtensionId theme_id =
+      extensions::ComponentLoader::Get(profile)->AddOrReplace(theme_dir);
+  CHECK_EQ(theme_id, kThemeExtensionId);
+  ThemeServiceFactory::GetForProfile(profile)->RevertToExtensionTheme(theme_id);
 }
 
 void ObermonBrowserMainExtraParts::PostMainMessageLoopRun() {
