@@ -26,23 +26,42 @@ Mutations are sparse. Equal assignments are ignored, effective changes are repre
 - mediation failure reporting;
 - access to the profile state graph.
 
+Each service generates one random, in-memory transport partition for its profile lifetime. Regular and off-the-record profiles therefore use different transport identities. Per-navigation authorization remains a separate bounded token and is never reused as the profile pool identity.
+
 The coordinator owns a `MediationBackend` interface. The active implementation is `LoopbackMediationBackend`, but navigation and tab code no longer depend directly on the Go process. This is the replacement seam for the future Mojo backend.
 
 ### Readiness-gated navigation
 
-`ScramjetNavigationThrottle` no longer treats a valid process handle as a ready backend. It defers the original navigation, requests readiness from the profile coordinator, and redirects only after the engine has atomically published that both local listeners are bound. Startup failure cancels the mediated navigation and records a failed mediation state.
+`ScramjetNavigationThrottle` no longer treats a valid process handle as a ready backend. It defers the original navigation, requests readiness from the profile coordinator, and redirects only after the engine has atomically published that both local listeners are bound. Startup failure cancels the mediated navigation and records a failed mediation state. A crashed engine closes its stale process handle and can be started again.
+
+### One initialized transport per profile configuration
+
+Normal tabs no longer instantiate independent Libcurl or Epoxy clients. Each document creates a lightweight `SharedTransportClient`, while `shared-transport-worker.ts` owns the initialized transport instances.
+
+The worker is scoped by Chromium's profile storage partition and caches transports by:
+
+```text
+profile transport partition
++ selected transport implementation
++ partitioned Wisp URL
+```
+
+HTTP requests and WebSocket streams are multiplexed through per-tab `MessagePort` connections. Abort signals propagate into worker-owned `AbortController` instances. Page shutdown closes its outstanding streams, while other tabs continue using the same underlying transport.
+
+When `SharedWorker` is unavailable or cannot initialize, Obermon falls back to a direct transport for that document.
 
 ### Intent and connection warming
 
 Intent hints are deduplicated in the profile backend. Selection and committed navigation prewarm the shared engine without creating a renderer.
 
-When the internal Scramjet document begins startup, it issues a speculative `/preconnect` request in parallel with service-worker registration and transport module loading. The Go engine opens and temporarily retains a raw destination TCP connection. Wisp sessions carry the browser-generated mediation token as their partition key and can consume only warm connections created for the same token.
+When the internal Scramjet document begins startup, it issues a speculative `/preconnect` request in parallel with service-worker registration and shared-transport initialization. The request and engine dial each have a 350 ms budget and do not sit on the controller's critical path. The Go engine temporarily retains a raw destination TCP connection for the profile transport partition. A Wisp stream from the same partition can consume that connection.
 
 The warm pool is:
 
 - bounded to two connections per destination and partition;
+- bounded to 64 connections globally;
 - expired after twelve seconds;
-- unavailable across different mediation tokens;
+- unavailable across different profile transport partitions;
 - optional and non-blocking on failure.
 
 ### Bounded diagnostics
@@ -51,7 +70,7 @@ The browser records top-level navigation metadata outside page JavaScript. Recor
 
 ### Authorization lifecycle
 
-Virtual URL authorization tokens are no longer stored forever. The registry is bounded and time-limited, while active sessions refresh their authorization when a valid internal URL update is observed.
+Virtual URL authorization tokens are separate from the profile transport partition. Navigation tokens are bounded and time-limited, while active sessions refresh authorization when a valid internal URL update is observed.
 
 ## Active runtime shape
 
@@ -59,6 +78,7 @@ Virtual URL authorization tokens are no longer stored forever. The registry is b
 Chromium browser process
   ObermonStateService (one per profile / OTR profile)
   ObermonBackendService (one per profile / OTR profile)
+  stable in-memory profile transport partition
   ScramjetNavigationThrottle
   ScramjetTabHelper
                  |
@@ -72,6 +92,9 @@ LoopbackMediationBackend
 Go engine
   bounded warm TCP pool
   Scramjet web runtime
+                 ^
+                 | one profile-scoped SharedWorker transport
+                 | lightweight MessagePort clients per tab
 ```
 
 The local HTTP and Wisp boundary is still transitional. The browser-visible destination remains a virtual URL and must use a distinct mediated security indicator.
@@ -109,8 +132,9 @@ Responses are designed to stream through Mojo data pipes. The contract is source
 ## Invariants
 
 - `main` remains unchanged until experiment code is compiled and reviewed.
-- Private profiles do not share the profile state graph or intent history.
-- A virtual destination is accepted only with a browser-generated authorization token.
+- Private profiles do not share the profile state graph, intent history, or shared transport worker.
+- A virtual destination is accepted only with a browser-generated navigation token.
+- The stable profile transport partition cannot authorize a virtual destination.
 - Speculative warming never creates a destination document or writes history.
 - Diagnostics do not copy response bodies by default.
 - The normal HTTPS indicator must not represent a mediated localhost document as a directly verified destination connection.
