@@ -70,6 +70,10 @@ def main() -> int:
     insert_after(build, '    "chrome_browser_main.cc",\n',
         '    "obermon/obermon_browser_main_extra_parts.cc",\n'
         '    "obermon/obermon_browser_main_extra_parts.h",\n'
+        '    "obermon/obermon_state_service.cc",\n'
+        '    "obermon/obermon_state_service.h",\n'
+        '    "obermon/obermon_state_service_factory.cc",\n'
+        '    "obermon/obermon_state_service_factory.h",\n'
         '    "obermon/pref_names.h",\n'
         '    "obermon/scramjet_engine_service.cc",\n'
         '    "obermon/scramjet_engine_service.h",\n'
