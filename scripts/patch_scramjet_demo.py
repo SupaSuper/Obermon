@@ -34,7 +34,12 @@ def main() -> int:
     replace_once(
         browser,
         'let urlWatcher = new UrlWatcherPlugin((url) => {\n\t\t\tbrowserState.url = url;\n\t\t});',
-        'let urlWatcher = new UrlWatcherPlugin((url) => {\n\t\t\tbrowserState.url = url;\n\t\t\tconst shellUrl = new URL(location.href);\n\t\t\tshellUrl.search = `?goto=${encodeURIComponent(url)}`;\n\t\t\thistory.replaceState(null, "", shellUrl);\n\t\t});',
+        'let urlWatcher = new UrlWatcherPlugin((url) => {\n\t\t\tbrowserState.url = url;\n\t\t\tconst shellUrl = new URL(location.href);\n\t\t\tshellUrl.searchParams.set("goto", url);\n\t\t\tshellUrl.searchParams.set("obermon", "1");\n\t\t\thistory.replaceState(null, "", shellUrl);\n\t\t});',
+    )
+    replace_once(
+        browser,
+        'let catchEscapedLinks = new CatchEscapedLinksPlugin(\n\t\t\t(url) =>\n\t\t\t\tnew URL(`/?goto=${encodeURIComponent(url.href)}`, location.origin)\n\t\t);',
+        'let catchEscapedLinks = new CatchEscapedLinksPlugin((url) => {\n\t\t\tconst shellUrl = new URL(location.href);\n\t\t\tshellUrl.searchParams.set("goto", url.href);\n\t\t\tshellUrl.searchParams.set("obermon", "1");\n\t\t\treturn shellUrl;\n\t\t});',
     )
     replace_once(
         browser,

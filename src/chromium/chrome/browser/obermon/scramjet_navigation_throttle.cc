@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "chrome/browser/obermon/scramjet_navigation_throttle.h"
 
-#include <memory>
-
 #include "base/functional/bind.h"
+#include "base/memory/ptr_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "chrome/browser/obermon/pref_names.h"
 #include "chrome/browser/obermon/scramjet_engine_service.h"
@@ -44,7 +43,7 @@ void ScramjetNavigationThrottle::MaybeCreateAndAdd(
     return;
   }
   registry.AddThrottle(
-      std::make_unique<ScramjetNavigationThrottle>(registry));
+      base::WrapUnique(new ScramjetNavigationThrottle(registry)));
 }
 
 ScramjetNavigationThrottle::ScramjetNavigationThrottle(

@@ -5,7 +5,7 @@
 
 namespace obermon {
 
-TEST(ScramjetURLMapperTest, RoundTripsDestination) {
+TEST(ScramjetURLMapperTest, RoundTripsAuthorizedDestination) {
   const GURL destination("https://example.com/a path?q=one%20two#fragment");
   const GURL internal = ScramjetURLMapper::ToInternalURL(destination);
   ASSERT_TRUE(internal.is_valid());
@@ -21,9 +21,16 @@ TEST(ScramjetURLMapperTest, RejectsNonWebSchemes) {
       GURL("chrome://settings/")));
 }
 
-TEST(ScramjetURLMapperTest, RejectsForgedInternalDestination) {
+TEST(ScramjetURLMapperTest, RejectsForgedInternalDestinationWithoutToken) {
   EXPECT_FALSE(ScramjetURLMapper::DestinationFromInternalURL(
-                   GURL("http://example.com/?goto=https%3A%2F%2Fexample.org"))
+                   GURL("http://127.0.0.1:4141/?goto=https%3A%2F%2Fexample.org"))
+                   .has_value());
+}
+
+TEST(ScramjetURLMapperTest, RejectsWrongOriginEvenWithQuery) {
+  EXPECT_FALSE(ScramjetURLMapper::DestinationFromInternalURL(
+                   GURL("http://example.com/?goto=https%3A%2F%2Fexample.org&"
+                        "obermon_token=forged"))
                    .has_value());
 }
 
