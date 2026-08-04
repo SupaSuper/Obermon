@@ -67,6 +67,9 @@ bool ScramjetEngineService::LaunchProcess() {
   if (is_running()) {
     return true;
   }
+  if (process_.IsValid()) {
+    process_.Close();
+  }
 
   base::FilePath executable_dir;
   base::FilePath temp_dir;
