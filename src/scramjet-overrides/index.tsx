@@ -99,25 +99,32 @@ export async function getTransport() {
 	return new Transport({ wisp: getSessionWispUrl(demoSettingsStore.wispUrl) });
 }
 
-function preconnectDestination(): Promise<void> {
+async function preconnectDestination(): Promise<void> {
 	if (requestedTool !== "browser" || !initialDestination || !mediationPartition) {
-		return Promise.resolve();
+		return;
 	}
+
 	const endpoint = new URL("/preconnect", location.origin);
 	endpoint.searchParams.set("destination", initialDestination);
 	endpoint.searchParams.set("partition", mediationPartition);
-	return fetch(endpoint, {
-		method: "POST",
-		cache: "no-store",
-		credentials: "omit",
-	})
-		.then((response) => {
-			if (!response.ok) throw new Error(`Preconnect failed: ${response.status}`);
-		})
-		.catch((error) => {
-			// Preconnect is speculative. Failure must not block navigation.
-			console.debug("Obermon destination preconnect skipped", error);
+	const controller = new AbortController();
+	const timeout = setTimeout(() => controller.abort(), 350);
+	try {
+		const response = await fetch(endpoint, {
+			method: "POST",
+			cache: "no-store",
+			credentials: "omit",
+			signal: controller.signal,
 		});
+		if (!response.ok) {
+			throw new Error(`Preconnect failed: ${response.status}`);
+		}
+	} catch (error) {
+		// Preconnect is speculative. Failure and timeout never block navigation.
+		console.debug("Obermon destination preconnect skipped", error);
+	} finally {
+		clearTimeout(timeout);
+	}
 }
 
 async function resolveServiceWorker(
@@ -145,12 +152,13 @@ async function resolveServiceWorker(
 async function initializeController(): Promise<void> {
 	setStatus("Starting Scramjet…");
 	const registrationPromise = navigator.serviceWorker.register("./sw.js");
-	const preconnectPromise = preconnectDestination();
+	// Fire the connection hint beside the real startup work. The request has its
+	// own 350 ms budget and is not part of the controller's critical path.
+	void preconnectDestination();
 	const [registration, Transport] = await Promise.all([
 		registrationPromise,
 		initialTransportConstructor,
-		preconnectPromise,
-	]).then(([registration, Transport]) => [registration, Transport] as const);
+	]);
 	const serviceworker = await resolveServiceWorker(registration);
 	setStatus("Connecting transport…");
 	controller = new Controller({
