@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "chrome/browser/obermon/scramjet_tab_helper.h"
 
+#include <utility>
+
 #include "chrome/browser/obermon/obermon_state_service.h"
 #include "chrome/browser/obermon/obermon_state_service_factory.h"
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
@@ -114,14 +116,22 @@ void ScramjetTabHelper::DidStopLoading() {
 }
 
 void ScramjetTabHelper::OnVisibilityChanged(content::Visibility visibility) {
+  UpdateVisibilityLifecycle(visibility);
+}
+
+void ScramjetTabHelper::PrimaryMainFrameRenderProcessGone(
+    base::TerminationStatus status) {
   if (!state_service_) {
     return;
   }
   PageMutation mutation;
-  mutation.lifecycle = visibility == content::Visibility::VISIBLE
-                           ? PageLifecycleState::kActive
-                           : PageLifecycleState::kBackground;
+  mutation.lifecycle = PageLifecycleState::kDiscarded;
+  mutation.loading = PageLoadingState::kIdle;
   state_service_->UpdatePage(web_contents(), mutation);
+}
+
+void ScramjetTabHelper::RenderViewReady() {
+  UpdateVisibilityLifecycle(web_contents()->GetVisibility());
 }
 
 void ScramjetTabHelper::WebContentsDestroyed() {
@@ -157,6 +167,18 @@ void ScramjetTabHelper::RecordNavigationMetadata(
     metadata.status = headers->response_code();
   }
   state_service_->AppendRequestMetadata(std::move(metadata));
+}
+
+void ScramjetTabHelper::UpdateVisibilityLifecycle(
+    content::Visibility visibility) {
+  if (!state_service_) {
+    return;
+  }
+  PageMutation mutation;
+  mutation.lifecycle = visibility == content::Visibility::VISIBLE
+                           ? PageLifecycleState::kActive
+                           : PageLifecycleState::kBackground;
+  state_service_->UpdatePage(web_contents(), mutation);
 }
 
 WEB_CONTENTS_USER_DATA_KEY_IMPL(ScramjetTabHelper);
