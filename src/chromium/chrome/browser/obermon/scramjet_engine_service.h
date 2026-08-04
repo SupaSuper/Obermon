@@ -3,6 +3,7 @@
 #ifndef CHROME_BROWSER_OBERMON_SCRAMJET_ENGINE_SERVICE_H_
 #define CHROME_BROWSER_OBERMON_SCRAMJET_ENGINE_SERVICE_H_
 
+#include "base/no_destructor.h"
 #include "base/process/process.h"
 
 namespace obermon {
@@ -18,6 +19,7 @@ class ScramjetEngineService {
   bool is_running() const;
 
  private:
+  friend class base::NoDestructor<ScramjetEngineService>;
   ScramjetEngineService();
   ~ScramjetEngineService();
   base::Process process_;

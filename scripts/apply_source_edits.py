@@ -55,16 +55,13 @@ def main() -> int:
         f'  obermon::ScramjetTabHelper::CreateForWebContents(web_contents);  {MARK}\n',
     )
 
+    # Keep extensions/ independent from chrome/ layering: the product-owned ID
+    # is a literal in this narrow UI exception rather than an include dependency.
     ui_util = root / "extensions/browser/ui_util.cc"
-    insert_after(
-        ui_util,
-        '#include "extensions/browser/ui_util.h"\n',
-        f'#include "chrome/browser/obermon/constants.h"  {MARK}\n',
-    )
     replace_once(
         ui_util,
         'bool ShouldDisplayInExtensionSettings(const Extension& extension) {\n  return ShouldDisplayInExtensionSettings(extension.GetType(),\n                                          extension.location());\n}',
-        'bool ShouldDisplayInExtensionSettings(const Extension& extension) {\n  if (extension.id() == obermon::kScramjetExtensionId) {\n    return true;\n  }\n  return ShouldDisplayInExtensionSettings(extension.GetType(),\n                                          extension.location());\n}',
+        'bool ShouldDisplayInExtensionSettings(const Extension& extension) {\n  constexpr char kObermonScramjetExtensionId[] =\n      "nfmkpakigincnlglfeddmombloaeikci";\n  if (extension.id() == kObermonScramjetExtensionId) {\n    return true;\n  }\n  return ShouldDisplayInExtensionSettings(extension.GetType(),\n                                          extension.location());\n}',
     )
 
     build = root / "chrome/browser/BUILD.gn"

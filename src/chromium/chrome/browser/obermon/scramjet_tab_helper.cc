@@ -3,6 +3,7 @@
 #include "chrome/browser/obermon/scramjet_tab_helper.h"
 
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
+#include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/navigation_handle.h"
@@ -31,6 +32,7 @@ void ScramjetTabHelper::DidFinishNavigation(
       web_contents()->GetController().GetLastCommittedEntry();
   if (entry) {
     entry->SetVirtualURL(*destination);
+    web_contents()->NotifyNavigationStateChanged(content::INVALIDATE_TYPE_URL);
   }
 }
 

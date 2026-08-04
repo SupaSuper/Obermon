@@ -4,9 +4,9 @@
 
 #include "base/command_line.h"
 #include "base/files/file_path.h"
-#include "base/no_destructor.h"
 #include "base/path_service.h"
 #include "base/process/launch.h"
+#include "build/build_config.h"
 
 namespace obermon {
 
@@ -29,6 +29,9 @@ bool ScramjetEngineService::Start() {
   const base::FilePath engine =
       executable_dir.Append(FILE_PATH_LITERAL("obermon"))
           .Append(FILE_PATH_LITERAL("scramjet-engine.exe"));
+  if (!base::PathExists(engine)) {
+    return false;
+  }
   base::CommandLine command(engine);
   command.AppendSwitch("server");
   base::LaunchOptions options;
