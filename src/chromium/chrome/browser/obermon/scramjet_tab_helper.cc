@@ -120,7 +120,7 @@ void ScramjetTabHelper::OnVisibilityChanged(content::Visibility visibility) {
 }
 
 void ScramjetTabHelper::PrimaryMainFrameRenderProcessGone(
-    base::TerminationStatus status) {
+    base::TerminationStatus /*status*/) {
   if (!state_service_) {
     return;
   }
