@@ -72,7 +72,12 @@ def main() -> int:
     demo_source = args.scramjet / "packages" / "demo" / "src"
     utils_source = args.scramjet / "packages" / "utils" / "src"
 
-    copy_override(overrides / "index.tsx", demo_source / "index.tsx")
+    for source_name, destination_name in (
+        ("index.tsx", "index.tsx"),
+        ("shared-transport-client.ts", "shared-transport-client.ts"),
+        ("shared-transport-worker.ts", "shared-transport-worker.ts"),
+    ):
+        copy_override(overrides / source_name, demo_source / destination_name)
     copy_override(
         overrides / "BrowserView.tsx",
         demo_source / "pages" / "BrowserView.tsx",
