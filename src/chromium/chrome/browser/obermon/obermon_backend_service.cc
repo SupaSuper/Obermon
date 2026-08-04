@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "base/functional/bind.h"
+#include "base/uuid.h"
 #include "chrome/browser/obermon/mediation_backend.h"
 #include "chrome/browser/obermon/obermon_state_service.h"
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
@@ -24,7 +25,9 @@ ObermonBackendService::ObermonBackendService(
     ObermonStateService* state_service)
     : profile_(profile),
       state_service_(state_service),
-      backend_(CreateLoopbackMediationBackend()) {}
+      backend_(CreateLoopbackMediationBackend()),
+      transport_partition_(
+          base::Uuid::GenerateRandomV4().AsLowercaseString()) {}
 
 ObermonBackendService::~ObermonBackendService() = default;
 
@@ -43,7 +46,8 @@ GURL ObermonBackendService::PrepareNavigation(
     return GURL();
   }
 
-  const GURL internal = backend_->CreateNavigationURL(destination);
+  const GURL internal =
+      backend_->CreateNavigationURL(destination, transport_partition_);
   if (!internal.is_valid()) {
     return GURL();
   }
