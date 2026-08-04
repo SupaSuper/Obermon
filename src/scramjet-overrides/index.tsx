@@ -13,6 +13,8 @@ let mountPoint: HTMLElement = initialMount;
 let controller: InstanceType<typeof Controller>;
 const cachePlugin = new HttpCachePlugin();
 
+type TransportConstructor = new (options: { wisp: string }) => any;
+
 const requestedParameter = new URL(location.href).searchParams.get("tool");
 const requestedTool =
 	requestedParameter === "requests" ||
@@ -56,23 +58,27 @@ function setStatus(message: string): void {
 	mountPoint.classList.add("obermon-startup");
 }
 
-async function loadTransportModule(transport: string) {
+async function loadTransportConstructor(
+	transport: string
+): Promise<TransportConstructor> {
 	if (transport === "epoxy") {
-		return import("@mercuryworkshop/epoxy-transport");
+		const module = await import("@mercuryworkshop/epoxy-transport");
+		return module.default as unknown as TransportConstructor;
 	}
-	return import("@mercuryworkshop/libcurl-transport");
+	const module = await import("@mercuryworkshop/libcurl-transport");
+	return module.default as unknown as TransportConstructor;
 }
 
 const initialTransport = demoSettingsStore.transport;
-const initialTransportModule = loadTransportModule(initialTransport);
+const initialTransportConstructor = loadTransportConstructor(initialTransport);
 
 export async function getTransport() {
 	const selected = demoSettingsStore.transport;
-	const module =
+	const Transport =
 		selected === initialTransport
-			? await initialTransportModule
-			: await loadTransportModule(selected);
-	return new module.default({ wisp: demoSettingsStore.wispUrl });
+			? await initialTransportConstructor
+			: await loadTransportConstructor(selected);
+	return new Transport({ wisp: demoSettingsStore.wispUrl });
 }
 
 async function resolveServiceWorker(
@@ -100,15 +106,15 @@ async function resolveServiceWorker(
 async function initializeController(): Promise<void> {
 	setStatus("Starting Scramjet…");
 	const registrationPromise = navigator.serviceWorker.register("./sw.js");
-	const [registration, transportModule] = await Promise.all([
+	const [registration, Transport] = await Promise.all([
 		registrationPromise,
-		initialTransportModule,
+		initialTransportConstructor,
 	]);
 	const serviceworker = await resolveServiceWorker(registration);
 	setStatus("Connecting transport…");
 	controller = new Controller({
 		serviceworker,
-		transport: new transportModule.default({ wisp: demoSettingsStore.wispUrl }),
+		transport: new Transport({ wisp: demoSettingsStore.wispUrl }),
 		scramjetConfig: defaultConfigDev,
 	});
 	await controller.wait();
