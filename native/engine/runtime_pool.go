@@ -153,9 +153,10 @@ func destinationAddress(raw string) (string, error) {
 	return net.JoinHostPort(destination.Hostname(), port), nil
 }
 
-// handlePreconnect is invoked by the local HTTP handler. Connections are keyed
-// by the browser-generated mediation token and can only be consumed by a Wisp
-// session presenting the same token.
+// Connections are keyed by a random in-memory profile transport partition.
+// Regular and off-the-record profiles receive different values. Individual
+// navigation authorization uses a separate short-lived token and is not reused
+// as the connection-pool identity.
 func handlePreconnect(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != "/preconnect" {
 		return false
@@ -170,7 +171,7 @@ func handlePreconnect(w http.ResponseWriter, r *http.Request) bool {
 	}
 	partition := normalizedPartition(r.URL.Query().Get("partition"))
 	if partition == "default" {
-		http.Error(w, "valid mediation partition required", http.StatusForbidden)
+		http.Error(w, "valid transport partition required", http.StatusForbidden)
 		return true
 	}
 	address, err := destinationAddress(r.URL.Query().Get("destination"))
