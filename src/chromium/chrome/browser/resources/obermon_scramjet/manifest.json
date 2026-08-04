@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Scramjet",
+  "version": "1.0.0",
+  "description": "Built-in Obermon Scramjet privacy and mediation control.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAl1C+xeRv78ARslkEIPePjnQVPUg206ZNoq/8gd/535gQI3hZyB8GMwPlkD0F0QLKh/2F3FM3USndNM3gbjR1h4tf4+1kS0O5HfD1ByBE9E1gvw4aeslO1YQhdwsKARTq0ZquhpEn2+DxdwV77x4m9+krSObLyI/VHWEoya5xA3B+cWlJy1E+TOr+n913BUtDHSLpsUwi9M/ZZ2YAyRZ+KUEc94S1jmXExtf+NDt7oZkvMPDyzjBgq8YUQXBa7pj48zaOC1u8SAOf0Zu35OYh/hjiNL8rqsT/z/BSFOiYlyRe9dwsMQZlot9dquMBS30kW4HH6ytX+iVeLViomNQVKwIDAQAB",
+  "permissions": ["tabs", "storage", "webNavigation"],
+  "host_permissions": ["<all_urls>", "http://127.0.0.1:4141/*"],
+  "background": {"service_worker": "background.js"},
+  "action": {
+    "default_title": "Scramjet",
+    "default_popup": "popup.html"
+  },
+  "incognito": "split"
+}

@@ -1,0 +1,24 @@
+# Copyright 2026 Obermon contributors
+# SPDX-License-Identifier: BSD-3-Clause
+
+source_set("url_mapper") {
+  sources = [
+    "constants.h",
+    "scramjet_url_mapper.cc",
+    "scramjet_url_mapper.h",
+  ]
+  deps = [
+    "//net",
+    "//url",
+  ]
+}
+
+executable("obermon_tests") {
+  testonly = true
+  sources = [ "scramjet_url_mapper_unittest.cc" ]
+  deps = [
+    ":url_mapper",
+    "//base/test:test_support",
+    "//testing/gtest",
+  ]
+}

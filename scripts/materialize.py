@@ -19,20 +19,6 @@ def copy_tree(source: Path, destination: Path) -> None:
             shutil.copy2(item, target)
 
 
-def copy_scramjet(scramjet: Path, chromium: Path) -> None:
-    output = chromium / "chrome/browser/resources/obermon_scramjet/vendor"
-    output.mkdir(parents=True, exist_ok=True)
-    candidates = [
-        scramjet / "packages/core/dist",
-        scramjet / "packages/controller/dist",
-        scramjet / "packages/utils/dist",
-    ]
-    for candidate in candidates:
-        if not candidate.exists():
-            raise FileNotFoundError(f"Scramjet build output missing: {candidate}")
-        copy_tree(candidate, output / candidate.parent.name)
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--repo", required=True, type=Path)
@@ -41,7 +27,18 @@ def main() -> int:
     args = parser.parse_args()
 
     copy_tree(args.repo / "src/chromium", args.chromium)
-    copy_scramjet(args.scramjet, args.chromium)
+
+    demo_dist = args.scramjet / "packages/demo/dist"
+    engine_web = args.repo / "native/engine/web"
+    if engine_web.exists():
+        shutil.rmtree(engine_web)
+    copy_tree(demo_dist, engine_web)
+
+    # The engine source is built outside GN, then copied beside the browser.
+    generated_engine = args.chromium / "chrome/browser/obermon/generated_engine"
+    if generated_engine.exists():
+        shutil.rmtree(generated_engine)
+    copy_tree(args.repo / "native/engine", generated_engine)
     return 0
 
 

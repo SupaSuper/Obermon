@@ -23,10 +23,7 @@ function Require-Command([string]$Name) {
 }
 
 if (-not $IsWindows) { throw "Obermon's supported release build currently requires Windows." }
-Require-Command git
-Require-Command python
-Require-Command node
-Require-Command corepack
+foreach ($Tool in @("git", "python", "node", "corepack", "go")) { Require-Command $Tool }
 
 New-Item -ItemType Directory -Force -Path $WorkRoot | Out-Null
 $Drive = Get-PSDrive -Name ([IO.Path]::GetPathRoot($WorkRoot).Substring(0,1))
@@ -46,7 +43,6 @@ if (-not $SkipChromiumSync) {
     Push-Location $ChromiumRoot
     try { fetch --nohooks chromium } finally { Pop-Location }
   }
-
   git -C $ChromiumSrc fetch origin $Config.chromium.ref --depth 1
   git -C $ChromiumSrc checkout --detach FETCH_HEAD
   Push-Location $ChromiumRoot
@@ -59,6 +55,7 @@ if (-not $SkipScramjetBuild) {
   }
   git -C $ScramjetSrc fetch origin $Config.scramjet.ref --depth 1
   git -C $ScramjetSrc checkout --detach FETCH_HEAD
+  python (Join-Path $RepoRoot "scripts\patch_scramjet_demo.py") --scramjet $ScramjetSrc
   corepack enable
   corepack prepare $Config.scramjet.packageManager --activate
   Push-Location $ScramjetSrc
@@ -66,6 +63,7 @@ if (-not $SkipScramjetBuild) {
     pnpm install --frozen-lockfile
     pnpm --filter @mercuryworkshop/scramjet run rewriter:build
     pnpm --filter @mercuryworkshop/scramjet run build
+    pnpm --filter @mercuryworkshop/scramjet-demo run build
   } finally { Pop-Location }
 }
 
@@ -73,6 +71,5 @@ python (Join-Path $RepoRoot "scripts\materialize.py") `
   --repo $RepoRoot `
   --chromium $ChromiumSrc `
   --scramjet $ScramjetSrc
-
 python (Join-Path $RepoRoot "scripts\apply_source_edits.py") --chromium $ChromiumSrc
 Write-Host "Obermon source materialized at $ChromiumSrc" -ForegroundColor Green

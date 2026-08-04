@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Scramjet</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main>
+    <header><img src="logo.svg" alt=""><h1>Scramjet</h1></header>
+    <nav>
+      <button class="active" data-tool="requests"><span class="icon">▱</span><b>Requests</b><span>›</span></button>
+      <button data-tool="playground"><span class="icon">&lt;/&gt;</span><b>Playground</b><span>›</span></button>
+      <button data-tool="settings"><span class="icon">⚙</span><b>Settings</b><span>›</span></button>
+    </nav>
+    <p id="error" role="alert"></p>
+    <footer><strong>Scramjet</strong><label class="switch"><input id="toggle" type="checkbox"><span></span></label></footer>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
