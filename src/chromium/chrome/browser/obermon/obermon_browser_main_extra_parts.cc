@@ -8,6 +8,8 @@
 #include "base/path_service.h"
 #include "chrome/browser/extensions/component_loader.h"
 #include "chrome/browser/obermon/constants.h"
+#include "chrome/browser/obermon/obermon_backend_service.h"
+#include "chrome/browser/obermon/obermon_backend_service_factory.h"
 #include "chrome/browser/obermon/obermon_state_service_factory.h"
 #include "chrome/browser/obermon/scramjet_engine_service.h"
 #include "chrome/browser/profiles/profile.h"
@@ -21,14 +23,16 @@ ObermonBrowserMainExtraParts::~ObermonBrowserMainExtraParts() = default;
 
 void ObermonBrowserMainExtraParts::PostProfileInit(Profile* profile,
                                                    bool is_initial_profile) {
-  // Materialize the canonical profile graph before tabs begin attaching. OTR
-  // profiles receive their own service instance through the factory policy.
+  // Materialize the canonical profile graph and coordinator before tabs begin
+  // attaching. OTR profiles receive isolated service instances.
   ObermonStateServiceFactory::GetForProfile(profile);
+  ObermonBackendService* backend =
+      ObermonBackendServiceFactory::GetForProfile(profile);
 
   // Prewarm without blocking profile initialization. Navigations still defer
   // on EnsureReady(), so a failed prewarm cannot race the first mediated load.
-  if (is_initial_profile) {
-    ScramjetEngineService::Get()->EnsureReady(base::DoNothing());
+  if (is_initial_profile && backend) {
+    backend->EnsureReady(base::DoNothing());
   }
 
   base::FilePath executable_dir;
