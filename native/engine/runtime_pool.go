@@ -16,6 +16,7 @@ import (
 const (
 	warmConnectionLifetime = 12 * time.Second
 	maxWarmPerDestination   = 2
+	maxWarmConnections      = 64
 )
 
 type warmConnection struct {
@@ -32,6 +33,14 @@ var warmConnections = &warmConnectionPool{entries: make(map[string][]warmConnect
 
 func warmConnectionKey(partition, network, address string) string {
 	return partition + "\x00" + network + "\x00" + address
+}
+
+func (pool *warmConnectionPool) countLocked() int {
+	total := 0
+	for _, connections := range pool.entries {
+		total += len(connections)
+	}
+	return total
 }
 
 func (pool *warmConnectionPool) cleanupLocked(now time.Time) {
@@ -57,7 +66,8 @@ func (pool *warmConnectionPool) preconnect(partition, network, address string, t
 	now := time.Now()
 	pool.mu.Lock()
 	pool.cleanupLocked(now)
-	if len(pool.entries[key]) >= maxWarmPerDestination {
+	if len(pool.entries[key]) >= maxWarmPerDestination ||
+		pool.countLocked() >= maxWarmConnections {
 		pool.mu.Unlock()
 		return nil
 	}
@@ -71,7 +81,8 @@ func (pool *warmConnectionPool) preconnect(partition, network, address string, t
 	pool.mu.Lock()
 	defer pool.mu.Unlock()
 	pool.cleanupLocked(time.Now())
-	if len(pool.entries[key]) >= maxWarmPerDestination {
+	if len(pool.entries[key]) >= maxWarmPerDestination ||
+		pool.countLocked() >= maxWarmConnections {
 		_ = conn.Close()
 		return nil
 	}
@@ -148,8 +159,17 @@ func handlePreconnect(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != "/preconnect" {
 		return false
 	}
-	if r.Method != http.MethodPost && r.Method != http.MethodGet {
+	if !originAllowed(r.Header.Get("Origin")) {
+		http.Error(w, "origin not allowed", http.StatusForbidden)
+		return true
+	}
+	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return true
+	}
+	partition := normalizedPartition(r.URL.Query().Get("partition"))
+	if partition == "default" {
+		http.Error(w, "valid mediation partition required", http.StatusForbidden)
 		return true
 	}
 	address, err := destinationAddress(r.URL.Query().Get("destination"))
@@ -157,7 +177,6 @@ func handlePreconnect(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return true
 	}
-	partition := normalizedPartition(r.URL.Query().Get("partition"))
 	if err := warmConnections.preconnect(partition, "tcp", address, 5*time.Second); err != nil {
 		http.Error(w, "preconnect failed", http.StatusBadGateway)
 		return true
