@@ -13,6 +13,28 @@ let mountPoint: HTMLElement = initialMount;
 let controller: InstanceType<typeof Controller>;
 const cachePlugin = new HttpCachePlugin();
 
+const requestedParameter = new URL(location.href).searchParams.get("tool");
+const requestedTool =
+	requestedParameter === "requests" ||
+	requestedParameter === "playground" ||
+	requestedParameter === "settings"
+		? requestedParameter
+		: "browser";
+
+// Begin fetching only the selected surface immediately. Vite emits these as
+// separate chunks, so normal browsing does not parse Monaco, request tooling,
+// playground code, or settings UI.
+const browserModulePromise =
+	requestedTool === "browser" || requestedTool === "requests"
+		? import("./pages/BrowserView")
+		: null;
+const requestsModulePromise =
+	requestedTool === "requests" ? import("./pages/RequestViewer") : null;
+const playgroundModulePromise =
+	requestedTool === "playground" ? import("./pages/Playground") : null;
+const settingsModulePromise =
+	requestedTool === "settings" ? import("./pages/SettingsPage") : null;
+
 const HOST_STYLE = `
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#000;color-scheme:dark}
 #app,.obermon-host{width:100%;height:100%;min-width:0;min-height:0;display:flex;overflow:hidden;background:#000;contain:layout paint style}
@@ -34,19 +56,22 @@ function setStatus(message: string): void {
 	mountPoint.classList.add("obermon-startup");
 }
 
-export async function getTransport() {
-	const wisp = demoSettingsStore.wispUrl;
-	if (demoSettingsStore.transport === "epoxy") {
-		const { default: EpoxyClient } = await import(
-			"@mercuryworkshop/epoxy-transport"
-		);
-		return new EpoxyClient({ wisp });
+async function loadTransportModule(transport: string) {
+	if (transport === "epoxy") {
+		return import("@mercuryworkshop/epoxy-transport");
 	}
+	return import("@mercuryworkshop/libcurl-transport");
+}
 
-	const { default: LibcurlClient } = await import(
-		"@mercuryworkshop/libcurl-transport"
-	);
-	return new LibcurlClient({ wisp });
+const initialTransportModule = loadTransportModule(demoSettingsStore.transport);
+
+export async function getTransport() {
+	const selected = demoSettingsStore.transport;
+	const module =
+		selected === demoSettingsStore.transport
+			? await loadTransportModule(selected)
+			: await initialTransportModule;
+	return new module.default({ wisp: demoSettingsStore.wispUrl });
 }
 
 async function resolveServiceWorker(
@@ -73,12 +98,16 @@ async function resolveServiceWorker(
 
 async function initializeController(): Promise<void> {
 	setStatus("Starting Scramjet…");
-	const registration = await navigator.serviceWorker.register("./sw.js");
+	const registrationPromise = navigator.serviceWorker.register("./sw.js");
+	const [registration, transportModule] = await Promise.all([
+		registrationPromise,
+		initialTransportModule,
+	]);
 	const serviceworker = await resolveServiceWorker(registration);
 	setStatus("Connecting transport…");
 	controller = new Controller({
 		serviceworker,
-		transport: await getTransport(),
+		transport: new transportModule.default({ wisp: demoSettingsStore.wispUrl }),
 		scramjetConfig: defaultConfigDev,
 	});
 	await controller.wait();
@@ -107,14 +136,10 @@ async function waitForBrowserFrame(
 
 async function mountSelectedView(): Promise<void> {
 	const host = createHost();
-	const requested = new URL(location.href).searchParams.get("tool");
 
-	if (requested === "requests") {
+	if (requestedTool === "requests") {
 		const [{ default: BrowserView, browserState }, { default: RequestViewer }] =
-			await Promise.all([
-				import("./pages/BrowserView"),
-				import("./pages/RequestViewer"),
-			]);
+			await Promise.all([browserModulePromise!, requestsModulePromise!]);
 		const bootstrap = document.createElement("div");
 		bootstrap.className = "obermon-frame-bootstrap";
 		bootstrap.append(<BrowserView active={false} />);
@@ -124,19 +149,19 @@ async function mountSelectedView(): Promise<void> {
 		return;
 	}
 
-	if (requested === "playground") {
-		const { default: PlaygroundView } = await import("./pages/Playground");
+	if (requestedTool === "playground") {
+		const { default: PlaygroundView } = await playgroundModulePromise!;
 		host.append(<PlaygroundView active={true} />);
 		return;
 	}
 
-	if (requested === "settings") {
-		const { default: SettingsView } = await import("./pages/SettingsPage");
+	if (requestedTool === "settings") {
+		const { default: SettingsView } = await settingsModulePromise!;
 		host.append(<SettingsView />);
 		return;
 	}
 
-	const { default: BrowserView } = await import("./pages/BrowserView");
+	const { default: BrowserView } = await browserModulePromise!;
 	host.append(<BrowserView active={true} />);
 }
 
