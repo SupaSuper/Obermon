@@ -62,6 +62,24 @@ def patch_request_viewer(path: Path) -> None:
     )
 
 
+def patch_controller(path: Path) -> None:
+    replace_once(
+        path,
+        'function makeId(): string {\n\treturn Math.random().toString(36).substring(2, 10);\n}',
+        'function makeId(): string {\n\treturn crypto.randomUUID().replaceAll("-", "");\n}',
+    )
+    replace_once(
+        path,
+        '\tprivate wasmPayload: string | null = null;\n',
+        '\tprivate virtualWasmPromise: Promise<string> | null = null;\n',
+    )
+    replace_regex(
+        path,
+        r'\t\t\t\tif \(path === frame\.prefix \+ this\.config\.virtualWasmPath\) \{.*?\n\t\t\t\t\}\n\n\t\t\t\tconst sjheaders',
+        '''\t\t\t\tif (path === frame.prefix + this.config.virtualWasmPath) {\n\t\t\t\t\tthis.virtualWasmPromise ??= fetch(`${this.config.wasmPath}.js`).then(\n\t\t\t\t\t\tasync (response) => {\n\t\t\t\t\t\t\tif (!response.ok) {\n\t\t\t\t\t\t\t\tthrow new Error(`Failed to load prebuilt WASM payload: ${response.status}`);\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\treturn response.text();\n\t\t\t\t\t\t}\n\t\t\t\t\t);\n\t\t\t\t\treturn [\n\t\t\t\t\t\t{\n\t\t\t\t\t\t\tbody: await this.virtualWasmPromise,\n\t\t\t\t\t\t\tstatus: 200,\n\t\t\t\t\t\t\tstatusText: "OK",\n\t\t\t\t\t\t\theaders: [["Content-Type", "application/javascript"]],\n\t\t\t\t\t\t},\n\t\t\t\t\t\t[],\n\t\t\t\t\t];\n\t\t\t\t}\n\n\t\t\t\tconst sjheaders''',
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scramjet", required=True, type=Path)
@@ -70,6 +88,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[1]
     overrides = repo_root / "src" / "scramjet-overrides"
     demo_source = args.scramjet / "packages" / "demo" / "src"
+    controller_source = args.scramjet / "packages" / "controller" / "src"
     utils_source = args.scramjet / "packages" / "utils" / "src"
 
     for source_name, destination_name in (
@@ -88,6 +107,7 @@ def main() -> int:
     )
 
     patch_request_viewer(demo_source / "pages" / "RequestViewer.tsx")
+    patch_controller(controller_source / "index.ts")
     replace_once(
         demo_source / "pages" / "SettingsPage.tsx",
         'controller.setTransport(getTransport());',
