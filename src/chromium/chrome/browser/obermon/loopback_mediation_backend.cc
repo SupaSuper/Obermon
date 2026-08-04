@@ -3,6 +3,7 @@
 #include "chrome/browser/obermon/mediation_backend.h"
 
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "base/notreached.h"
@@ -42,8 +43,9 @@ class LoopbackMediationBackend final : public MediationBackend {
     return ScramjetEngineService::Get()->is_ready();
   }
 
-  GURL CreateNavigationURL(const GURL& destination) override {
-    return ScramjetURLMapper::ToInternalURL(destination);
+  GURL CreateNavigationURL(const GURL& destination,
+                           std::string_view transport_partition) override {
+    return ScramjetURLMapper::ToInternalURL(destination, transport_partition);
   }
 
   void Shutdown() override {
