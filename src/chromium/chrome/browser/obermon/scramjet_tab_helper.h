@@ -3,7 +3,9 @@
 #ifndef CHROME_BROWSER_OBERMON_SCRAMJET_TAB_HELPER_H_
 #define CHROME_BROWSER_OBERMON_SCRAMJET_TAB_HELPER_H_
 
+#include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"
+#include "base/time/time.h"
 #include "content/public/browser/visibility.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
@@ -36,7 +38,12 @@ class ScramjetTabHelper
   friend class content::WebContentsUserData<ScramjetTabHelper>;
   WEB_CONTENTS_USER_DATA_KEY_DECL();
 
+  void RecordNavigationMetadata(content::NavigationHandle* navigation_handle,
+                                const GURL& visible_url);
+
   raw_ptr<ObermonStateService> state_service_ = nullptr;
+  base::flat_map<raw_ptr<content::NavigationHandle>, base::TimeTicks>
+      navigation_starts_;
 };
 
 }  // namespace obermon
