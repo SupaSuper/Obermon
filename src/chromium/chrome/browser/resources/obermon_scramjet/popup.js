@@ -1,34 +1,64 @@
+const root = document.querySelector("main");
 const toggle = document.querySelector("#toggle");
 const error = document.querySelector("#error");
 
+let busy = false;
+
+function setError(message = "") {
+  if (error.textContent !== message) error.textContent = message;
+}
+
 async function send(message) {
   const response = await chrome.runtime.sendMessage(message);
-  if (!response?.ok) throw new Error(response?.error || "Scramjet request failed");
+  if (!response?.ok) {
+    throw new Error(response?.error || "Scramjet request failed");
+  }
   return response;
 }
 
-document.querySelectorAll("[data-tool]").forEach(button => {
-  button.addEventListener("click", async () => {
-    try {
-      error.textContent = "";
-      await send({type: "tool.open", tool: button.dataset.tool});
-      window.close();
-    } catch (cause) {
-      error.textContent = cause.message;
-    }
-  });
-});
+root.addEventListener("click", async event => {
+  const target = event.target instanceof Element
+    ? event.target.closest("button[data-tool]")
+    : null;
+  if (!target || busy) return;
 
-toggle.addEventListener("change", async () => {
+  busy = true;
+  setError();
   try {
-    error.textContent = "";
-    const state = await send({type: "mode.set", enabled: toggle.checked});
-    toggle.checked = state.enabled;
+    await send({type: "tool.open", tool: target.dataset.tool});
+    window.close();
   } catch (cause) {
-    toggle.checked = !toggle.checked;
-    error.textContent = cause.message;
+    setError(cause instanceof Error ? cause.message : String(cause));
+    busy = false;
   }
 });
 
-send({type: "mode.get"}).then(state => toggle.checked = state.enabled)
-  .catch(cause => error.textContent = cause.message);
+toggle.addEventListener("change", async () => {
+  if (busy) return;
+  busy = true;
+  toggle.disabled = true;
+  setError();
+
+  const requested = toggle.checked;
+  try {
+    const state = await send({type: "mode.set", enabled: requested});
+    if (toggle.checked !== state.enabled) toggle.checked = state.enabled;
+  } catch (cause) {
+    toggle.checked = !requested;
+    setError(cause instanceof Error ? cause.message : String(cause));
+  } finally {
+    toggle.disabled = false;
+    busy = false;
+  }
+});
+
+async function initialize() {
+  try {
+    const state = await send({type: "mode.get"});
+    if (toggle.checked !== state.enabled) toggle.checked = state.enabled;
+  } catch (cause) {
+    setError(cause instanceof Error ? cause.message : String(cause));
+  }
+}
+
+void initialize();
