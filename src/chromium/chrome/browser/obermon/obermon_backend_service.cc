@@ -4,7 +4,7 @@
 
 #include <utility>
 
-#include "base/functional/callback_helpers.h"
+#include "base/functional/bind.h"
 #include "chrome/browser/obermon/mediation_backend.h"
 #include "chrome/browser/obermon/obermon_state_service.h"
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
@@ -97,7 +97,7 @@ void ObermonBackendService::HintDestination(const GURL& destination,
   // to start the shared mediation backend, but do not create a renderer or send
   // a destination request.
   if (strength >= IntentStrength::kSelected) {
-    EnsureReady(base::DoNothing());
+    EnsureReady(base::BindOnce([](bool) {}));
   }
 }
 
