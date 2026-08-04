@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: BSD-3-Clause
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
 
-#include "base/containers/flat_set.h"
+#include <string>
+#include <utility>
+
+#include "base/containers/circular_deque.h"
+#include "base/containers/flat_map.h"
 #include "base/no_destructor.h"
+#include "base/time/time.h"
 #include "base/uuid.h"
 #include "chrome/browser/obermon/constants.h"
 #include "net/base/escape.h"
@@ -13,8 +18,57 @@
 namespace obermon {
 namespace {
 
-base::flat_set<std::string>& AuthorizedSessions() {
-  static base::NoDestructor<base::flat_set<std::string>> sessions;
+constexpr size_t kMaximumAuthorizedSessions = 4096;
+constexpr base::TimeDelta kAuthorizedSessionLifetime = base::Hours(24);
+
+class AuthorizedSessionRegistry {
+ public:
+  void Authorize(const std::string& token) {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    Prune(now);
+    sessions_[token] = now;
+    order_.emplace_back(token, now);
+    Prune(now);
+  }
+
+  bool ValidateAndTouch(const std::string& token) {
+    const base::TimeTicks now = base::TimeTicks::Now();
+    Prune(now);
+    const auto it = sessions_.find(token);
+    if (it == sessions_.end()) {
+      return false;
+    }
+    it->second = now;
+    order_.emplace_back(token, now);
+    return true;
+  }
+
+ private:
+  void Prune(base::TimeTicks now) {
+    while (!order_.empty()) {
+      const auto& [token, recorded_at] = order_.front();
+      const auto current = sessions_.find(token);
+      const bool stale_queue_entry =
+          current == sessions_.end() || current->second != recorded_at;
+      const bool expired = now - recorded_at > kAuthorizedSessionLifetime;
+      const bool over_limit = sessions_.size() > kMaximumAuthorizedSessions;
+      if (!stale_queue_entry && !expired && !over_limit) {
+        break;
+      }
+      if (current != sessions_.end() && current->second == recorded_at &&
+          (expired || over_limit)) {
+        sessions_.erase(current);
+      }
+      order_.pop_front();
+    }
+  }
+
+  base::flat_map<std::string, base::TimeTicks> sessions_;
+  base::circular_deque<std::pair<std::string, base::TimeTicks>> order_;
+};
+
+AuthorizedSessionRegistry& AuthorizedSessions() {
+  static base::NoDestructor<AuthorizedSessionRegistry> sessions;
   return *sessions;
 }
 
@@ -37,7 +91,7 @@ GURL ScramjetURLMapper::ToInternalURL(const GURL& destination) {
     return GURL();
   }
   const std::string token = base::Uuid::GenerateRandomV4().AsLowercaseString();
-  AuthorizedSessions().insert(token);
+  AuthorizedSessions().Authorize(token);
   const std::string escaped_destination =
       net::EscapeQueryParamValue(destination.spec(), true);
   const std::string escaped_token = net::EscapeQueryParamValue(token, true);
@@ -52,7 +106,7 @@ std::optional<GURL> ScramjetURLMapper::DestinationFromInternalURL(
   }
   std::string token;
   if (!net::GetValueForKeyInQuery(internal, "obermon_token", &token) ||
-      !AuthorizedSessions().contains(token)) {
+      !AuthorizedSessions().ValidateAndTouch(token)) {
     return std::nullopt;
   }
   std::string value;
