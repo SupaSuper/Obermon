@@ -80,6 +80,28 @@ def patch_controller(path: Path) -> None:
     )
 
 
+def patch_http_cache(path: Path) -> None:
+    replace_once(
+        path,
+        'const STORED_AT_HEADER = "x-sj-cached-at";\n',
+        'const STORED_AT_HEADER = "x-sj-cached-at";\n\n'
+        '// Known bodies above this size bypass the proxy cache so large media and\n'
+        '// downloads remain fully streaming. Unknown-length responses still use a\n'
+        '// tee, which avoids blocking the rewrite path on Cache Storage.\n'
+        'const MAX_CACHEABLE_BODY_BYTES = 8 * 1024 * 1024;\n',
+    )
+    replace_once(
+        path,
+        'function buildStorableResponse(\n\tbody: ArrayBuffer | null,\n',
+        'function buildStorableResponse(\n\tbody: BodyInit | null,\n',
+    )
+    replace_regex(
+        path,
+        r'\t\t\t// Drain the stream once and rebuild the BareResponse around the\n.*?\n\t\t\t}\n\t\t\}\);',
+        '''\t\t\tconst contentLength = Number.parseInt(\n\t\t\t\theaders.get("content-length") ?? "",\n\t\t\t\t10\n\t\t\t);\n\t\t\tif (\n\t\t\t\tNumber.isFinite(contentLength) &&\n\t\t\t\tcontentLength > MAX_CACHEABLE_BODY_BYTES\n\t\t\t) {\n\t\t\t\treturn;\n\t\t\t}\n\n\t\t\tconst original = props.response;\n\t\t\tconst nullBody = NULL_BODY_STATUSES.has(original.status);\n\t\t\tlet pipelineBody: ReadableStream<Uint8Array> | null = null;\n\t\t\tlet cacheBody: ReadableStream<Uint8Array> | null = null;\n\t\t\tif (!nullBody && original.body) {\n\t\t\t\t[pipelineBody, cacheBody] = original.body.tee();\n\t\t\t}\n\n\t\t\tconst replacement = BareResponse.fromNativeResponse(\n\t\t\t\tnew Response(pipelineBody, {\n\t\t\t\t\tstatus: original.status,\n\t\t\t\t\tstatusText: original.statusText,\n\t\t\t\t\theaders,\n\t\t\t\t})\n\t\t\t);\n\t\t\treplacement.url = original.url;\n\t\t\treplacement.redirected = original.redirected;\n\t\t\treplacement.rawHeaders = [...original.rawHeaders];\n\t\t\tprops.response = replacement;\n\n\t\t\tconst cacheKey = buildCacheKeyRequest(\n\t\t\t\tctx.parsed.url.href,\n\t\t\t\treq.initialHeaders\n\t\t\t);\n\t\t\tconst toStore = buildStorableResponse(\n\t\t\t\tcacheBody,\n\t\t\t\toriginal.status,\n\t\t\t\toriginal.statusText,\n\t\t\t\toriginal.rawHeaders\n\t\t\t);\n\n\t\t\tvoid this.openCache()\n\t\t\t\t.then((cache) => cache.put(cacheKey, toStore))\n\t\t\t\t.catch((error) => {\n\t\t\t\t\tconsole.warn("[scramjet-http-cache] cache.put failed:", error);\n\t\t\t\t});\n\t\t});''',
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--scramjet", required=True, type=Path)
@@ -108,6 +130,7 @@ def main() -> int:
 
     patch_request_viewer(demo_source / "pages" / "RequestViewer.tsx")
     patch_controller(controller_source / "index.ts")
+    patch_http_cache(utils_source / "http-cache-plugin.ts")
     replace_once(
         demo_source / "pages" / "SettingsPage.tsx",
         'controller.setTransport(getTransport());',
