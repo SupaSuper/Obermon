@@ -4,6 +4,7 @@
 #define CHROME_BROWSER_OBERMON_MEDIATION_BACKEND_H_
 
 #include <memory>
+#include <string_view>
 
 #include "base/functional/callback.h"
 #include "url/gurl.h"
@@ -31,7 +32,8 @@ class MediationBackend {
   virtual void EnsureReady(ReadyCallback callback) = 0;
   virtual State state() const = 0;
   virtual bool IsReady() const = 0;
-  virtual GURL CreateNavigationURL(const GURL& destination) = 0;
+  virtual GURL CreateNavigationURL(const GURL& destination,
+                                   std::string_view transport_partition) = 0;
   virtual void Shutdown() = 0;
 };
 
