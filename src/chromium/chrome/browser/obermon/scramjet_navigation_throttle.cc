@@ -5,6 +5,8 @@
 #include "base/functional/bind.h"
 #include "base/memory/ptr_util.h"
 #include "base/task/single_thread_task_runner.h"
+#include "chrome/browser/obermon/obermon_state_service.h"
+#include "chrome/browser/obermon/obermon_state_service_factory.h"
 #include "chrome/browser/obermon/pref_names.h"
 #include "chrome/browser/obermon/scramjet_engine_service.h"
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
@@ -55,8 +57,9 @@ ScramjetNavigationThrottle::~ScramjetNavigationThrottle() = default;
 content::NavigationThrottle::ThrottleCheckResult
 ScramjetNavigationThrottle::WillStartRequest() {
   content::NavigationHandle* handle = navigation_handle();
-  Profile* profile = Profile::FromBrowserContext(
-      handle->GetWebContents()->GetBrowserContext());
+  content::WebContents* web_contents = handle->GetWebContents();
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
   if (!profile || !profile->GetPrefs()->GetBoolean(prefs::kScramjetEnabled)) {
     return PROCEED;
   }
@@ -73,23 +76,67 @@ ScramjetNavigationThrottle::WillStartRequest() {
     return PROCEED;
   }
 
-  if (!ScramjetEngineService::Get()->is_running() &&
-      !ScramjetEngineService::Get()->Start()) {
-    return CANCEL;
-  }
-
   const GURL internal = ScramjetURLMapper::ToInternalURL(destination);
   if (!internal.is_valid()) {
     return CANCEL;
   }
 
+  if (ObermonStateService* state =
+          ObermonStateServiceFactory::GetForProfile(profile)) {
+    PageMutation mutation;
+    mutation.destination_url = destination;
+    mutation.internal_url = internal;
+    mutation.mediation = PageMediationState::kPreparing;
+    mutation.loading = PageLoadingState::kLoading;
+    state->UpdatePage(web_contents, mutation);
+  }
+
+  ScramjetEngineService* engine = ScramjetEngineService::Get();
+  if (engine->is_ready()) {
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+        FROM_HERE,
+        base::BindOnce(&OpenInternalURL, web_contents->GetWeakPtr(), internal,
+                       handle->GetReferrer(), handle->GetPageTransition(),
+                       handle->IsRendererInitiated()));
+    return CANCEL_AND_IGNORE;
+  }
+
+  engine->EnsureReady(base::BindOnce(
+      &ScramjetNavigationThrottle::RedirectAfterBackendReady,
+      weak_factory_.GetWeakPtr(), internal, handle->GetReferrer(),
+      handle->GetPageTransition(), handle->IsRendererInitiated()));
+  return DEFER;
+}
+
+void ScramjetNavigationThrottle::RedirectAfterBackendReady(
+    GURL internal_url,
+    content::Referrer referrer,
+    ui::PageTransition transition,
+    bool renderer_initiated,
+    bool ready) {
+  content::WebContents* web_contents = navigation_handle()->GetWebContents();
+  Profile* profile =
+      Profile::FromBrowserContext(web_contents->GetBrowserContext());
+
+  if (!ready) {
+    if (profile) {
+      if (ObermonStateService* state =
+              ObermonStateServiceFactory::GetForProfile(profile)) {
+        PageMutation mutation;
+        mutation.mediation = PageMediationState::kFailed;
+        mutation.loading = PageLoadingState::kIdle;
+        state->UpdatePage(web_contents, mutation);
+      }
+    }
+    CancelDeferredNavigation(CANCEL);
+    return;
+  }
+
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
       FROM_HERE,
-      base::BindOnce(&OpenInternalURL,
-                     handle->GetWebContents()->GetWeakPtr(), internal,
-                     handle->GetReferrer(), handle->GetPageTransition(),
-                     handle->IsRendererInitiated()));
-  return CANCEL_AND_IGNORE;
+      base::BindOnce(&OpenInternalURL, web_contents->GetWeakPtr(), internal_url,
+                     referrer, transition, renderer_initiated));
+  CancelDeferredNavigation(CANCEL_AND_IGNORE);
 }
 
 const char* ScramjetNavigationThrottle::GetNameForLogging() {
