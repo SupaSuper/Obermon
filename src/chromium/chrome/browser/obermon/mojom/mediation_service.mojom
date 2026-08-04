@@ -1,0 +1,67 @@
+// Copyright 2026 Obermon contributors
+// SPDX-License-Identifier: BSD-3-Clause
+module obermon.mojom;
+
+import "mojo/public/mojom/base/time.mojom";
+import "url/mojom/url.mojom";
+
+enum BackendState {
+  kStopped,
+  kStarting,
+  kReady,
+  kFailed,
+  kStopping,
+};
+
+enum SessionLifecycle {
+  kActive,
+  kFrozen,
+  kClosed,
+};
+
+struct SessionOptions {
+  string profile_partition;
+  bool off_the_record;
+  uint64 page_id;
+};
+
+struct NavigationRequest {
+  url.mojom.Url destination;
+  string method;
+  array<uint8> body;
+};
+
+struct ResponseHead {
+  int32 status;
+  string status_text;
+  array<string> raw_headers;
+  mojo_base.mojom.TimeTicks response_time;
+};
+
+struct HealthState {
+  BackendState state;
+  uint32 active_sessions;
+  uint32 pooled_transports;
+};
+
+interface ResponseClient {
+  OnResponseStarted(ResponseHead head, handle<data_pipe_consumer> body);
+  OnComplete(int32 net_error, uint64 encoded_bytes, uint64 decoded_bytes);
+};
+
+interface MediationSession {
+  Navigate(NavigationRequest request, pending_remote<ResponseClient> client);
+  Freeze();
+  Resume();
+  Close();
+};
+
+// Phase-two utility-process contract. It is intentionally source-visible now so
+// the active loopback backend and future Mojo backend implement the same browser
+// policy boundary. The interface is not wired into the current build yet.
+interface MediationService {
+  CreateSession(SessionOptions options)
+      => (pending_remote<MediationSession> session);
+  Preconnect(url.mojom.Url destination);
+  GetHealth() => (HealthState state);
+};
