@@ -1,0 +1,14 @@
+{
+  "chromium": {
+    "repository": "https://chromium.googlesource.com/chromium/src.git",
+    "ref": "150.0.7871.214"
+  },
+  "scramjet": {
+    "repository": "https://github.com/MercuryWorkshop/scramjet.git",
+    "ref": "e9ff92d1ec98ba140cb4bca840fb40c2b9b52ebf",
+    "packageManager": "pnpm@10.12.1"
+  },
+  "depotTools": {
+    "repository": "https://chromium.googlesource.com/chromium/tools/depot_tools.git"
+  }
+}

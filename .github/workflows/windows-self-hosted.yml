@@ -1,0 +1,39 @@
+name: Build Obermon Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'config/**'
+      - '.github/workflows/windows-self-hosted.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: [self-hosted, Windows, X64, obermon-builder]
+    timeout-minutes: 720
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bootstrap pinned sources
+        shell: pwsh
+        run: ./scripts/bootstrap.ps1 -WorkRoot C:\ObermonBuild
+      - name: Build
+        shell: pwsh
+        run: ./scripts/build.ps1 -WorkRoot C:\ObermonBuild
+      - name: Test
+        shell: pwsh
+        run: ./scripts/test.ps1 -WorkRoot C:\ObermonBuild
+      - name: Package
+        shell: pwsh
+        run: ./scripts/package.ps1 -WorkRoot C:\ObermonBuild
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Obermon-Windows-x64
+          path: C:\ObermonBuild\dist\Obermon-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14

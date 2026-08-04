@@ -1,0 +1,19 @@
+# Materialized upstream trees
+.work/
+out/
+dist/
+third_party/scramjet-src/
+
+# Generated Chromium overlay assets
+src/chromium/chrome/browser/resources/obermon_scramjet/vendor/
+
+# Local visual-reference extraction
+reference/vivaldi-extracted/
+reference/*.exe
+
+# Tooling
+.depot_tools/
+*.log
+*.zip
+.DS_Store
+Thumbs.db
