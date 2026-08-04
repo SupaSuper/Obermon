@@ -265,14 +265,14 @@ async function bootstrap(): Promise<void> {
 	}
 }
 
-addEventListener(
-	"pagehide",
-	() => {
-		for (const shared of sharedClients) shared.dispose();
-		sharedClients.clear();
-	},
-	{ once: true }
-);
+addEventListener("pagehide", (event: PageTransitionEvent) => {
+	// A persisted page is entering Chromium's back/forward cache. Keeping the
+	// MessagePorts alive lets the restored page resume without rebuilding the
+	// transport and controller. Real unloads release all per-page handles.
+	if (event.persisted) return;
+	for (const shared of sharedClients) shared.dispose();
+	sharedClients.clear();
+});
 
 void bootstrap();
 export { controller, cachePlugin };
