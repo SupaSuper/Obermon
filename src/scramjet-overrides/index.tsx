@@ -15,7 +15,10 @@ const cachePlugin = new HttpCachePlugin();
 
 type TransportConstructor = new (options: { wisp: string }) => any;
 
-const requestedParameter = new URL(location.href).searchParams.get("tool");
+const pageUrl = new URL(location.href);
+const mediationPartition = pageUrl.searchParams.get("obermon_token") ?? "";
+const initialDestination = pageUrl.searchParams.get("goto");
+const requestedParameter = pageUrl.searchParams.get("tool");
 const requestedTool =
 	requestedParameter === "requests" ||
 	requestedParameter === "playground" ||
@@ -58,6 +61,21 @@ function setStatus(message: string): void {
 	mountPoint.classList.add("obermon-startup");
 }
 
+function getSessionWispUrl(configured: string): string {
+	if (!mediationPartition) return configured;
+	try {
+		const url = new URL(configured, location.href);
+		const isLocalEngine =
+			(url.hostname === "127.0.0.1" || url.hostname === "localhost") &&
+			(url.port === "4142" || (!url.port && url.protocol === "ws:"));
+		if (!isLocalEngine) return configured;
+		url.searchParams.set("partition", mediationPartition);
+		return url.href;
+	} catch {
+		return configured;
+	}
+}
+
 async function loadTransportConstructor(
 	transport: string
 ): Promise<TransportConstructor> {
@@ -78,7 +96,28 @@ export async function getTransport() {
 		selected === initialTransport
 			? await initialTransportConstructor
 			: await loadTransportConstructor(selected);
-	return new Transport({ wisp: demoSettingsStore.wispUrl });
+	return new Transport({ wisp: getSessionWispUrl(demoSettingsStore.wispUrl) });
+}
+
+function preconnectDestination(): Promise<void> {
+	if (requestedTool !== "browser" || !initialDestination || !mediationPartition) {
+		return Promise.resolve();
+	}
+	const endpoint = new URL("/preconnect", location.origin);
+	endpoint.searchParams.set("destination", initialDestination);
+	endpoint.searchParams.set("partition", mediationPartition);
+	return fetch(endpoint, {
+		method: "POST",
+		cache: "no-store",
+		credentials: "omit",
+	})
+		.then((response) => {
+			if (!response.ok) throw new Error(`Preconnect failed: ${response.status}`);
+		})
+		.catch((error) => {
+			// Preconnect is speculative. Failure must not block navigation.
+			console.debug("Obermon destination preconnect skipped", error);
+		});
 }
 
 async function resolveServiceWorker(
@@ -106,15 +145,19 @@ async function resolveServiceWorker(
 async function initializeController(): Promise<void> {
 	setStatus("Starting Scramjet…");
 	const registrationPromise = navigator.serviceWorker.register("./sw.js");
+	const preconnectPromise = preconnectDestination();
 	const [registration, Transport] = await Promise.all([
 		registrationPromise,
 		initialTransportConstructor,
-	]);
+		preconnectPromise,
+	]).then(([registration, Transport]) => [registration, Transport] as const);
 	const serviceworker = await resolveServiceWorker(registration);
 	setStatus("Connecting transport…");
 	controller = new Controller({
 		serviceworker,
-		transport: new Transport({ wisp: demoSettingsStore.wispUrl }),
+		transport: new Transport({
+			wisp: getSessionWispUrl(demoSettingsStore.wispUrl),
+		}),
 		scramjetConfig: defaultConfigDev,
 	});
 	await controller.wait();
