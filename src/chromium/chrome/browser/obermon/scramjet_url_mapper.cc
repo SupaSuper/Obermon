@@ -3,6 +3,7 @@
 #include "chrome/browser/obermon/scramjet_url_mapper.h"
 
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "base/containers/circular_deque.h"
@@ -72,6 +73,22 @@ AuthorizedSessionRegistry& AuthorizedSessions() {
   return *sessions;
 }
 
+bool IsValidTransportPartition(std::string_view partition) {
+  if (partition.empty() || partition.size() > 128) {
+    return false;
+  }
+  for (const char character : partition) {
+    const bool valid = character == '-' || character == '_' ||
+                       (character >= '0' && character <= '9') ||
+                       (character >= 'a' && character <= 'z') ||
+                       (character >= 'A' && character <= 'Z');
+    if (!valid) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 bool ScramjetURLMapper::IsEligibleDestination(const GURL& url) {
@@ -86,8 +103,11 @@ bool ScramjetURLMapper::IsInternalURL(const GURL& url) {
          url.EffectiveIntPort() == kScramjetEnginePort;
 }
 
-GURL ScramjetURLMapper::ToInternalURL(const GURL& destination) {
-  if (!IsEligibleDestination(destination)) {
+GURL ScramjetURLMapper::ToInternalURL(
+    const GURL& destination,
+    std::string_view transport_partition) {
+  if (!IsEligibleDestination(destination) ||
+      !IsValidTransportPartition(transport_partition)) {
     return GURL();
   }
   const std::string token = base::Uuid::GenerateRandomV4().AsLowercaseString();
@@ -95,8 +115,11 @@ GURL ScramjetURLMapper::ToInternalURL(const GURL& destination) {
   const std::string escaped_destination =
       net::EscapeQueryParamValue(destination.spec(), true);
   const std::string escaped_token = net::EscapeQueryParamValue(token, true);
+  const std::string escaped_partition = net::EscapeQueryParamValue(
+      std::string(transport_partition), true);
   return GURL("http://127.0.0.1:4141/?goto=" + escaped_destination +
-              "&obermon_token=" + escaped_token + "&obermon=1");
+              "&obermon_token=" + escaped_token +
+              "&obermon_partition=" + escaped_partition + "&obermon=1");
 }
 
 std::optional<GURL> ScramjetURLMapper::DestinationFromInternalURL(
